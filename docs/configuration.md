@@ -100,13 +100,13 @@ Most self-host admin installs should keep indexing disabled.
 
 ```sh
 NEXT_PUBLIC_BASEBUDDY_APP_NAME=BaseBuddy
-NEXT_PUBLIC_BASEBUDDY_DOCS_URL=https://docs.example.com
-NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL=https://support.example.com
+NEXT_PUBLIC_BASEBUDDY_DOCS_URL=https://basebuddycms.com/docs
+NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL=https://basebuddycms.com/support
 ```
 
 `NEXT_PUBLIC_BASEBUDDY_APP_NAME` changes the app name shown in the UI and metadata.
 
-`NEXT_PUBLIC_BASEBUDDY_DOCS_URL` and `NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL` let a self-host install point users to the right documentation and support destination for that deployment. Leave them unset to use the built-in defaults.
+`NEXT_PUBLIC_BASEBUDDY_DOCS_URL` and `NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL` let a self-host install point users to the right documentation and support destination for that deployment. Leave them unset to use the public BaseBuddy docs and support pages at `basebuddycms.com`.
 
 Set these before building the app so the public Next.js env values are available to the browser bundle.
 

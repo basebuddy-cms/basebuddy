@@ -10,15 +10,21 @@
 </p>
 
 <p align="center">
+  <a href="https://basebuddycms.com">Website</a>
+  ·
+  <a href="https://demo.basebuddycms.com">Demo</a>
+  ·
   <a href="./INSTALL.md">Install</a>
   ·
-  <a href="./docs/README.md">Docs</a>
+  <a href="https://basebuddycms.com/docs">Docs</a>
   ·
-  <a href="./SUPPORT.md">Support</a>
+  <a href="https://basebuddycms.com/support">Support</a>
   ·
   <a href="./LICENSE.md">License</a>
   ·
   <a href="./SECURITY.md">Security</a>
+  ·
+  <a href="https://github.com/basebuddy-cms/basebuddy">GitHub</a>
 </p>
 
 ![BaseBuddy maps existing database columns into an editor](./docs/assets/basebuddy-mapping-workflow.png)

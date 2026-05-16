@@ -24,10 +24,13 @@ const normalizeHttpUrl = (value: string | undefined) => {
   }
 };
 
+const defaultDocsUrl = "https://basebuddycms.com/docs";
+const defaultSupportUrl = "https://basebuddycms.com/support";
+
 export const getBaseBuddyBranding = (env: BrandingEnv = process.env) => ({
   appName: normalizeText(env.NEXT_PUBLIC_BASEBUDDY_APP_NAME, "BaseBuddy"),
-  docsUrl: normalizeHttpUrl(env.NEXT_PUBLIC_BASEBUDDY_DOCS_URL),
-  supportUrl: normalizeHttpUrl(env.NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL),
+  docsUrl: normalizeHttpUrl(env.NEXT_PUBLIC_BASEBUDDY_DOCS_URL) ?? defaultDocsUrl,
+  supportUrl: normalizeHttpUrl(env.NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL) ?? defaultSupportUrl,
 });
 
 export const baseBuddyBranding = getBaseBuddyBranding();

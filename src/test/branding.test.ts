@@ -6,8 +6,8 @@ describe("BaseBuddy branding", () => {
   it("uses production-safe defaults when no branding env is configured", () => {
     expect(getBaseBuddyBranding({})).toEqual({
       appName: "BaseBuddy",
-      docsUrl: null,
-      supportUrl: null,
+      docsUrl: "https://basebuddycms.com/docs",
+      supportUrl: "https://basebuddycms.com/support",
     });
   });
 
