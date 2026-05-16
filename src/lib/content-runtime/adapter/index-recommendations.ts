@@ -1,0 +1,5 @@
+export {
+  buildPostgresMappedPostIndexRecommendations as buildContentMappedPostIndexRecommendations,
+  type PostgresMappedContentIndexRecommendation as ContentMappedPostIndexRecommendation,
+  type PostgresMappedContentIndexRecommendationCategory as ContentMappedPostIndexRecommendationCategory,
+} from "./postgres/index-recommendations";

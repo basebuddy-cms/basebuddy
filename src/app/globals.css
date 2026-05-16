@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 210 100% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 8%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 55%;
+
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 210 100% 52%;
+
+    --radius: 0.5rem;
+
+    --success: 142 76% 46%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+
+    --surface-1: 0 0% 4%;
+    --surface-2: 0 0% 7%;
+    --surface-3: 0 0% 10%;
+
+    --gradient-shine: linear-gradient(
+      110deg,
+      hsl(0 0% 100% / 0) 0%,
+      hsl(0 0% 100% / 0.03) 40%,
+      hsl(0 0% 100% / 0.06) 50%,
+      hsl(0 0% 100% / 0.03) 60%,
+      hsl(0 0% 100% / 0) 100%
+    );
+
+    --sidebar-background: 0 0% 4%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 210 100% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-ring: 210 100% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  ::selection {
+    background: hsl(210 100% 52% / 0.3);
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(to right, hsl(0 0% 100%), hsl(0 0% 60%));
+  }
+
+  .text-gradient-blue {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(210 100% 70%), hsl(210 100% 52%));
+  }
+
+  .border-shine {
+    border-image: linear-gradient(
+      to right,
+      hsl(0 0% 14%),
+      hsl(0 0% 25%),
+      hsl(0 0% 14%)
+    ) 1;
+  }
+
+  .grid-pattern {
+    background-image: 
+      linear-gradient(hsl(0 0% 14%) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(0 0% 14%) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  .glow {
+    box-shadow: 0 0 60px -15px hsl(210 100% 52% / 0.3);
+  }
+
+  .surface-1 {
+    background-color: hsl(var(--surface-1));
+  }
+
+  .surface-2 {
+    background-color: hsl(var(--surface-2));
+  }
+
+  .surface-3 {
+    background-color: hsl(var(--surface-3));
+  }
+}
+
+@layer components {
+  /* ── Shared prose base ───────────────────────────────────────────── */
+  .prose-editor .ProseMirror,
+  .preview-content {
+    @apply outline-none;
+  }
+
+  .prose-editor .ProseMirror > * + *,
+  .preview-content > * + * {
+    margin-top: 1.25rem;
+  }
+
+  .prose-editor .ProseMirror p,
+  .preview-content p {
+    @apply text-lg leading-8 text-foreground/90;
+  }
+
+  .prose-editor .ProseMirror h1,
+  .preview-content h1 {
+    @apply mt-12 mb-4 text-4xl font-semibold text-foreground;
+  }
+
+  .prose-editor .ProseMirror h2,
+  .preview-content h2 {
+    @apply mt-10 mb-3 text-2xl font-semibold text-foreground;
+  }
+
+  .prose-editor .ProseMirror h3,
+  .preview-content h3 {
+    @apply mt-8 mb-3 text-xl font-semibold text-foreground;
+  }
+
+  .prose-editor .ProseMirror ul,
+  .preview-content ul {
+    @apply list-disc pl-6 space-y-1.5 text-foreground/80 text-lg leading-8;
+  }
+
+  .prose-editor .ProseMirror ol,
+  .preview-content ol {
+    @apply list-decimal pl-6 space-y-1.5 text-foreground/80 text-lg leading-8;
+  }
+
+  .prose-editor .ProseMirror blockquote,
+  .preview-content blockquote {
+    @apply border-l-4 border-primary pl-5 italic text-muted-foreground my-8 text-lg leading-8;
+  }
+
+  .prose-editor .ProseMirror pre,
+  .preview-content pre {
+    @apply rounded-lg bg-secondary border border-border p-4 font-mono text-sm leading-7 my-6 overflow-x-auto;
+  }
+
+  .prose-editor .ProseMirror a,
+  .preview-content a {
+    @apply text-primary underline;
+  }
+
+  .prose-editor .ProseMirror hr,
+  .preview-content hr {
+    @apply my-6 border-border;
+  }
+
+  .prose-editor .ProseMirror img,
+  .preview-content img {
+    @apply rounded-lg border border-border my-6 max-w-full;
+  }
+
+  /* ── Editor-only: placeholder ────────────────────────────────────── */
+  .prose-editor .ProseMirror p.is-editor-empty:first-child::before {
+    color: hsl(var(--muted-foreground));
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+}
