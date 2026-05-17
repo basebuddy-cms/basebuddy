@@ -24,6 +24,8 @@
   ·
   <a href="./SECURITY.md">Security</a>
   ·
+  <a href="./CHANGELOG.md">Changelog</a>
+  ·
   <a href="https://github.com/basebuddy-cms/basebuddy">GitHub</a>
 </p>
 
@@ -220,7 +222,7 @@ Start with:
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
+Contributions are welcome. Please read [Contributing](./docs/contributing.md) before opening a pull request.
 
 If you are changing mapping behavior, runtime storage semantics, permissions, setup env assumptions, or route ownership, update the relevant docs and tests in the same change.
 
