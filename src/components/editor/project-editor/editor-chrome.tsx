@@ -205,7 +205,7 @@ export function ProjectEditorChrome({
               className="flex h-12 items-center"
               onPlainNavigation={onNavigateProjects}
             >
-              <BaseBuddyWordmark className="h-8 w-auto" />
+              <BaseBuddyWordmark className="h-6 w-auto" />
             </NavigationLink>
             <span className="text-xs text-muted-foreground">/</span>
             <span className="text-xs text-foreground">{currentProjectName}</span>

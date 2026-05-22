@@ -23,7 +23,7 @@ export function BaseBuddyMark({ className = "h-6 w-6" }: BaseBuddyMarkProps) {
   );
 }
 
-export function BaseBuddyWordmark({ className = "h-9 w-auto" }: BaseBuddyWordmarkProps) {
+export function BaseBuddyWordmark({ className = "h-7 w-auto" }: BaseBuddyWordmarkProps) {
   return (
     <Image
       alt="BaseBuddy"

@@ -27,7 +27,7 @@ export default async function ProjectInvitationPage({ params }: ProjectInvitatio
       <div className="relative mx-auto flex min-h-screen max-w-3xl flex-col px-6 py-10">
         <div className="mb-12 flex items-center justify-between gap-4 border-b border-border pb-6">
           <Link href="/" className="inline-flex items-center">
-            <BaseBuddyWordmark className="h-10 w-auto" />
+            <BaseBuddyWordmark className="h-7 w-auto" />
           </Link>
           <Button variant="outline" size="sm" asChild>
             <Link href={auth.user ? "/projects" : "/login"}>{auth.user ? "Projects" : "Sign in"}</Link>
