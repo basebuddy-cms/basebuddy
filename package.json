@@ -2,6 +2,20 @@
   "name": "basebuddy",
   "private": true,
   "version": "0.0.0",
+  "description": "Open-source Supabase CMS and self-hosted editor for existing Supabase and Postgres databases.",
+  "keywords": [
+    "supabase-cms",
+    "supabase",
+    "cms",
+    "postgres-cms",
+    "postgres",
+    "postgresql",
+    "headless-cms",
+    "self-hosted",
+    "content-management",
+    "nextjs",
+    "markdown-editor"
+  ],
   "packageManager": "pnpm@10.32.1",
   "pnpm": {
     "overrides": {

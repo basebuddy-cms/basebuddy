@@ -5,8 +5,8 @@
 <h1 align="center">Open-Source CMS That Speaks Supabase Natively</h1>
 
 <p align="center">
-  BaseBuddy is a self-hosted editor for existing Supabase and Postgres databases.
-  It works with the tables you already have, then turns saved mappings into a clean editor for your team.
+  BaseBuddy is an open-source Supabase CMS and self-hosted editor for existing Supabase and Postgres databases.
+  It works with the tables you already have, then turns saved mappings into a clean, WordPress-like editor for your team.
 </p>
 
 <p align="center">
@@ -33,13 +33,14 @@
 
 ## What BaseBuddy Is
 
-BaseBuddy is for teams that already have content in Postgres or Supabase and want a real editor without rebuilding their database around a CMS.
+BaseBuddy is a Supabase CMS for teams that already have content in Postgres or Supabase and want a real editor without rebuilding their database around a CMS.
 
 You install BaseBuddy, connect it to your database, map your existing tables and fields, and start editing. The saved mapping is the source of truth. Your database stays yours.
 
 BaseBuddy is especially useful when you want:
 
 - a clean editor for existing posts, pages, docs, guides, or content tables;
+- a WordPress-like editing experience backed by your own Supabase or Postgres tables;
 - a minimal TipTap editor that can work with Markdown and HTML storage formats;
 - media and file management through Supabase Storage or S3-compatible buckets;
 - SEO fields, redirects, slugs, authors, categories, tags, and publishing workflows;
@@ -210,6 +211,8 @@ pnpm test:e2e
 Start with:
 
 - [Install guide](./INSTALL.md)
+- [Supabase CMS](https://basebuddycms.com/docs/supabase-cms)
+- [WordPress-like editor for Supabase](https://basebuddycms.com/docs/wordpress-like-editor-for-supabase)
 - [Configuration](./docs/configuration.md)
 - [Onboarding](./docs/onboarding.md)
 - [Projects and mapping](./docs/projects-and-mapping.md)
