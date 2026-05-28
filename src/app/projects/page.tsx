@@ -19,10 +19,9 @@ import {
 import { getProjectsPageBootstrap } from "@/lib/control-plane/server";
 import { formatProjectDate, getProjectRoleLabel } from "@/lib/control-plane/utils";
 import {
-  getControlPlaneSchemaSetupSection,
-  getInstallSetupStatus,
-  isInstallSetupReady,
-} from "@/lib/self-host/install-runtime";
+  getBaseBuddyConfigSetupStatus,
+  isBaseBuddyConfigSetupReady,
+} from "@/lib/basebuddy-config/setup";
 
 type ProjectsRouteSearchParams = Record<string, string | string[] | undefined>;
 
@@ -40,10 +39,9 @@ const getSingleSearchParamValue = (
 };
 
 export default async function ProjectsRoute({ searchParams }: ProjectsRouteProps = {}) {
-  const controlPlaneSchemaSection = await getControlPlaneSchemaSetupSection();
-  const setupStatus = getInstallSetupStatus({ controlPlaneSchemaSection });
+  const setupStatus = await getBaseBuddyConfigSetupStatus();
 
-  if (!isInstallSetupReady(setupStatus)) {
+  if (!isBaseBuddyConfigSetupReady(setupStatus)) {
     redirect("/onboarding");
   }
 
@@ -86,7 +84,7 @@ export default async function ProjectsRoute({ searchParams }: ProjectsRouteProps
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Projects</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Workspaces in this install</p>
+            <p className="mt-1 text-sm text-muted-foreground">Your connected content projects</p>
           </div>
           {hasProjects ? (
             <Button variant="hero" size="sm" asChild>
@@ -217,7 +215,7 @@ export default async function ProjectsRoute({ searchParams }: ProjectsRouteProps
                 <CardContent className="p-8">
                   <Database className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                   <CardDescription className="text-sm">
-                    Need another workspace in this install? Start a new project.
+                    Need another project? Start a new one.
                   </CardDescription>
                   <div className="mt-6">
                     <ProjectCreationForm />

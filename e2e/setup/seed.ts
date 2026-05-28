@@ -1,14 +1,29 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 import { Client as PgClient } from "pg";
 
+import { createBaseBuddyConfigUser } from "../../src/lib/basebuddy-config/auth";
+import {
+  addConfigProjectMemberByEmail,
+  ConfigProjectSlugConflictError,
+  createConfigProject,
+  getConfigProjectForUserBySlug,
+  saveConfigProjectContentMappingRevision,
+  updateConfigProjectMemberAccess,
+  updateConfigProjectMetadata,
+} from "../../src/lib/basebuddy-config/projects";
+import {
+  ensureBaseBuddyConfig,
+  loadBaseBuddyConfig,
+  writeBaseBuddyConfig,
+} from "../../src/lib/basebuddy-config/store";
 import {
   createDefaultContentMappingConfig,
   type ContentMappingConfig,
 } from "../../src/lib/content-runtime/mapping";
-import { normalizeEnvValue } from "../../src/lib/env/placeholders";
 
 import {
   PLAYWRIGHT_CACHE_DIR,
@@ -19,14 +34,11 @@ import {
 import {
   resolvePlaywrightSeedContentSupabaseSecretKey,
   resolvePlaywrightSeedContentSupabaseUrl,
-  resolvePlaywrightSeedControlDatabaseUrl,
   resolvePlaywrightSeedDatabaseUrl,
-  resolvePlaywrightSeedPublishableKey,
   resolvePlaywrightSeedProjectName,
   resolvePlaywrightSeedProjectSlug,
   resolvePlaywrightSeedRootCertificate,
   resolvePlaywrightSeedRootCertificateFile,
-  resolvePlaywrightSeedSupabaseUrl,
   shouldUsePlaywrightSeedDatabaseSsl,
 } from "../support/seed-env";
 
@@ -44,19 +56,16 @@ type SeedProjectConfig = {
 };
 
 type SeedEnvironment = {
-  appPublishableKey: string;
-  appServiceRoleKey: string;
-  appUrl: string;
   contentDatabaseUrl: string;
   contentStorageServiceRoleKey: string;
   contentStorageUrl: string;
-  controlDatabaseUrl: string;
   project: SeedProjectConfig;
   rootCertificate: string | null;
   users: Record<PlaywrightSeedUserKey, TestUserConfig>;
 };
 
 const SELF_HOST_MEDIA_BUCKET = "pw-self-host-media";
+// Playwright seed writes BaseBuddy users, members, and mapping to basebuddy.config.json.
 const SELF_HOST_TABLE_NAMES = {
   authors: "pw_self_host_authors",
   categories: "pw_self_host_categories",
@@ -275,16 +284,11 @@ const loadRootCertificate = async () => {
 
 const loadSeedEnvironment = async (): Promise<SeedEnvironment> => {
   const contentDatabaseUrl = resolvePlaywrightSeedDatabaseUrl(process.env);
-  const controlDatabaseUrl = resolvePlaywrightSeedControlDatabaseUrl(process.env);
   const projectName = resolvePlaywrightSeedProjectName(process.env);
   const projectSlug = resolvePlaywrightSeedProjectSlug(process.env);
 
   if (!contentDatabaseUrl) {
     throw new Error("Missing required environment variable: BASEBUDDY_CONTENT_DATABASE_URL");
-  }
-
-  if (!controlDatabaseUrl) {
-    throw new Error("Missing required environment variable: BASEBUDDY_CONTROL_DATABASE_URL");
   }
 
   if (!projectName) {
@@ -296,28 +300,15 @@ const loadSeedEnvironment = async (): Promise<SeedEnvironment> => {
   }
 
   return {
-    appPublishableKey: requireEnv(
-      "BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY",
-      resolvePlaywrightSeedPublishableKey(process.env),
-    ),
-    appServiceRoleKey: requireEnv(
-      "BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY",
-      normalizeEnvValue(process.env.BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY),
-    ),
-    appUrl: requireEnv(
-      "BASEBUDDY_CONTROL_SUPABASE_URL",
-      resolvePlaywrightSeedSupabaseUrl(process.env),
-    ),
     contentStorageServiceRoleKey: requireEnv(
-      "BASEBUDDY_CONTENT_SUPABASE_SECRET_KEY",
+      "BASEBUDDY_SUPABASE_SECRET_KEY",
       resolvePlaywrightSeedContentSupabaseSecretKey(process.env),
     ),
     contentStorageUrl: requireEnv(
-      "BASEBUDDY_CONTENT_SUPABASE_URL",
+      "BASEBUDDY_SUPABASE_URL",
       resolvePlaywrightSeedContentSupabaseUrl(process.env),
     ),
     contentDatabaseUrl,
-    controlDatabaseUrl,
     project: {
       name: projectName,
       slug: projectSlug,
@@ -464,158 +455,92 @@ async function withSeedRetry(
   throw new Error(`${label} failed after retries. ${lastError instanceof Error ? lastError.message : ""}`.trim());
 }
 
-const ensureAuthUser = async ({
-  adminClient,
+const ensureConfigUser = async ({
   email,
   label,
   password,
 }: {
-  adminClient: SupabaseLikeClient;
   email: string;
   label: string;
   password: string;
 }) => {
-  const { data: usersData, error: listError } = await withSeedRetry(
-    `List auth users for ${email}`,
-    () =>
-      adminClient.auth.admin.listUsers({
-        page: 1,
-        perPage: 1000,
-      }),
-    (result) => result.error,
-  );
-
-  if (listError) {
-    throw new Error(`Could not list auth users. ${listError.message}`);
-  }
-
-  const existingUser = usersData.users.find((user) => user.email?.toLowerCase() === email.toLowerCase());
+  const config = await loadBaseBuddyConfig();
+  const existingUser = config.users.find((user) => user.email.toLowerCase() === email.toLowerCase()) ?? null;
 
   if (existingUser) {
-    const { data: updatedUser, error: updateError } = await withSeedRetry(
-      `Update auth user ${email}`,
-      () =>
-        adminClient.auth.admin.updateUserById(existingUser.id, {
-          email_confirm: true,
-          password,
-          user_metadata: {
-            full_name: label,
-          },
-        }),
-      (result) => result.error,
-    );
-
-    if (updateError) {
-      throw new Error(`Could not update auth user ${email}. ${updateError.message}`);
-    }
-
-    return updatedUser.user;
+    return {
+      email: existingUser.email,
+      id: existingUser.id,
+    };
   }
 
-  const { data, error } = await withSeedRetry(
-    `Create auth user ${email}`,
-    () =>
-      adminClient.auth.admin.createUser({
-        email,
-        email_confirm: true,
-        password,
-        user_metadata: {
-          full_name: label,
-        },
-      }),
-    (result) => result.error,
-  );
+  const createdUser = await createBaseBuddyConfigUser({
+    email,
+    name: label,
+    password,
+  });
 
-  if (error || !data.user) {
-    throw new Error(`Could not create auth user ${email}. ${error?.message ?? "Unknown error."}`);
+  if (!createdUser) {
+    throw new Error(`Could not create config user ${email}.`);
   }
 
-  return data.user;
-};
-
-const ensureProfile = async ({
-  adminClient,
-  email,
-  name,
-  userId,
-}: {
-  adminClient: SupabaseLikeClient;
-  email: string;
-  name: string;
-  userId: string;
-}) => {
-  const { error } = await withSeedRetry(
-    `Upsert profile for ${email}`,
-    () =>
-      adminClient.from("basebuddy_profiles").upsert(
-        {
-          email,
-          id: userId,
-          name,
-        },
-        {
-          onConflict: "id",
-        },
-      ),
-    (result) => result.error,
-  );
-
-  if (error) {
-    throw new Error(`Could not upsert profile for ${email}. ${error.message}`);
-  }
+  return {
+    email: createdUser.email,
+    id: createdUser.id,
+  };
 };
 
 const createSeedProjectWithDatabase = async ({
   name,
   ownerUserId,
-  pgClient,
   slug,
 }: {
   name: string;
   ownerUserId: string;
-  pgClient: PgClient;
   slug: string;
 }) => {
-  await pgClient.query("begin");
+  const existingProject = await getConfigProjectForUserBySlug({
+    projectSlug: slug,
+    userId: ownerUserId,
+  });
 
-  try {
-    await pgClient.query("delete from public.basebuddy_projects where slug = $1", [slug]);
+  if (existingProject.project) {
+    const project = await updateConfigProjectMetadata({
+      name,
+      projectId: existingProject.project.id,
+      slug,
+      websiteUrl: null,
+    });
+    return project.id;
+  }
 
-    const result = await pgClient.query<{ id: string }>(
-      `
-        insert into public.basebuddy_projects (name, slug, created_by)
-        values ($1, $2, $3)
-        returning id
-      `,
-      [name, slug, ownerUserId],
-    );
-    const projectId = result.rows[0]?.id;
-
-    if (!projectId) {
-      throw new Error(`Could not create project ${slug}.`);
+  const project = await createConfigProject({
+    name,
+    slug,
+    userId: ownerUserId,
+  }).catch(async (error) => {
+    if (!(error instanceof ConfigProjectSlugConflictError)) {
+      throw error;
     }
 
-    await pgClient.query(
-      `
-        insert into public.basebuddy_project_members (project_id, user_id)
-        values ($1, $2)
-      `,
-      [projectId, ownerUserId],
-    );
-    await pgClient.query(
-      `
-        insert into public.basebuddy_project_member_roles (project_id, user_id, role_key)
-        values ($1, $2, 'owner')
-      `,
-      [projectId, ownerUserId],
-    );
-    await pgClient.query("commit");
+    const existing = await getConfigProjectForUserBySlug({
+      projectSlug: slug,
+      userId: ownerUserId,
+    });
 
-    return projectId;
-  } catch (error) {
-    await pgClient.query("rollback");
-    throw error;
-  }
+    if (!existing.project) {
+      throw error;
+    }
+
+    return updateConfigProjectMetadata({
+      name,
+      projectId: existing.project.id,
+      slug,
+      websiteUrl: null,
+    });
+  });
+
+  return project.id;
 };
 
 const ensureSupabaseBucket = async ({
@@ -953,45 +878,23 @@ const seedSelfHostProjectData = async ({
 };
 
 const seedProjectMappingRevision = async ({
-  ownerUserId,
-  pgClient,
   projectId,
 }: {
-  ownerUserId: string;
-  pgClient: PgClient;
   projectId: string;
 }) => {
-  await pgClient.query(
-    `
-      insert into private.basebuddy_project_content_mapping_revisions (
-        project_id,
-        binding_status,
-        version,
-        source,
-        mapping_config,
-        created_by
-      )
-      select
-        $1,
-        'ready',
-        coalesce(max(version), 0) + 1,
-        'system',
-        $2::jsonb,
-        $3
-      from private.basebuddy_project_content_mapping_revisions
-      where project_id = $1
-    `,
-    [projectId, buildSelfHostMappingConfig(), ownerUserId],
-  );
+  await saveConfigProjectContentMappingRevision({
+    bindingStatus: "ready",
+    mappingConfig: buildSelfHostMappingConfig(),
+    projectId,
+    source: "system",
+  });
 };
 
 const seedProjectMembers = async ({
-  adminClient,
   authorScopeId,
   projectId,
   users,
 }: {
-  adminClient: SupabaseLikeClient;
   authorScopeId: string;
   projectId: string;
   users: PlaywrightSeedState["users"];
@@ -999,46 +902,37 @@ const seedProjectMembers = async ({
   const userEntries = Object.entries(users) as Array<
     [PlaywrightSeedUserKey, PlaywrightSeedState["users"][PlaywrightSeedUserKey]]
   >;
-  const membershipRows = userEntries.map(([, user]) => ({
-    project_id: projectId,
-    user_id: user.userId,
-  }));
-  const userIds = userEntries.map(([, user]) => user.userId);
 
-  const { error: membersError } = await adminClient.from("basebuddy_project_members").upsert(membershipRows, {
-    onConflict: "project_id,user_id",
-  });
+  for (const [roleKey, user] of userEntries) {
+    const memberAccessInput = {
+      actorUserId: users.owner.userId,
+      authorScopes:
+        roleKey === "author"
+          ? [
+              {
+                canPublish: true,
+                cmsAuthorId: authorScopeId,
+              },
+            ]
+          : [],
+      projectId,
+      roles: ROLE_PROJECT_ROLES[roleKey],
+      userId: user.userId,
+    };
 
-  if (membersError) {
-    throw new Error(`Could not upsert project members. ${membersError.message}`);
-  }
+    await updateConfigProjectMemberAccess(memberAccessInput).catch(async (error) => {
+      if (!(error instanceof Error) || !/Project member not found/i.test(error.message)) {
+        throw error;
+      }
 
-  await adminClient.from("basebuddy_project_member_grants").delete().eq("project_id", projectId).in("user_id", userIds);
-  await adminClient.from("basebuddy_project_member_author_scopes").delete().eq("project_id", projectId).in("user_id", userIds);
-  await adminClient.from("basebuddy_project_member_roles").delete().eq("project_id", projectId).in("user_id", userIds);
-
-  const roleRows = userEntries.flatMap(([roleKey, user]) =>
-    ROLE_PROJECT_ROLES[roleKey].map((projectRole) => ({
-      project_id: projectId,
-      role_key: projectRole,
-      user_id: user.userId,
-    })),
-  );
-
-  const { error: rolesError } = await adminClient.from("basebuddy_project_member_roles").insert(roleRows);
-
-  if (rolesError) {
-    throw new Error(`Could not seed project roles. ${rolesError.message}`);
-  }
-
-  const { error: scopesError } = await adminClient.from("basebuddy_project_member_author_scopes").insert({
-    cms_author_id: authorScopeId,
-    project_id: projectId,
-    user_id: users.author.userId,
-  });
-
-  if (scopesError) {
-    throw new Error(`Could not seed author scopes. ${scopesError.message}`);
+      await addConfigProjectMemberByEmail({
+        actorUserId: memberAccessInput.actorUserId,
+        authorScopes: memberAccessInput.authorScopes,
+        email: user.email,
+        projectId: memberAccessInput.projectId,
+        roles: memberAccessInput.roles,
+      });
+    });
   }
 };
 
@@ -1053,11 +947,7 @@ const loadCachedSeedUsers = async (env: SeedEnvironment) => {
       await readFile(PLAYWRIGHT_SEED_STATE_PATH, "utf8"),
     ) as PlaywrightSeedState;
 
-    if (
-      cachedSeedState.controlPlaneUrl !== env.appUrl ||
-      cachedSeedState.controlDatabaseUrl !== env.controlDatabaseUrl ||
-      cachedSeedState.contentDatabaseUrl !== env.contentDatabaseUrl
-    ) {
+    if (cachedSeedState.contentDatabaseUrl !== env.contentDatabaseUrl) {
       return null;
     }
 
@@ -1077,19 +967,33 @@ const loadCachedSeedUsers = async (env: SeedEnvironment) => {
 
 export const seedPlaywrightEnvironment = async (): Promise<PlaywrightSeedState> => {
   const env = await loadSeedEnvironment();
-  const adminClient = createSupabaseAdminClient(env.appUrl, env.appServiceRoleKey);
-  const storageAdminClient =
-    env.contentStorageUrl === env.appUrl &&
-    env.contentStorageServiceRoleKey === env.appServiceRoleKey
-      ? adminClient
-      : createSupabaseAdminClient(env.contentStorageUrl, env.contentStorageServiceRoleKey);
+  await ensureBaseBuddyConfig({
+    content: {
+      provider: "postgres",
+    },
+  });
+  await writeBaseBuddyConfig((config) => ({
+    ...config,
+    install: {
+      ...config.install,
+      content: {
+        ...config.install.content,
+        provider: "postgres",
+      },
+      updatedAt: new Date().toISOString(),
+    },
+  }));
+
+  const storageAdminClient = createSupabaseAdminClient(
+    env.contentStorageUrl,
+    env.contentStorageServiceRoleKey,
+  );
   const cachedSeedUsers = await loadCachedSeedUsers(env);
   const seededUsers = cachedSeedUsers ?? ({} as PlaywrightSeedState["users"]);
 
   if (!Object.keys(seededUsers).length) {
     for (const [key, userConfig] of Object.entries(env.users) as Array<[PlaywrightSeedUserKey, TestUserConfig]>) {
-      const user = await ensureAuthUser({
-        adminClient,
+      const user = await ensureConfigUser({
         email: userConfig.email,
         label: userConfig.label,
         password: userConfig.password,
@@ -1101,34 +1005,15 @@ export const seedPlaywrightEnvironment = async (): Promise<PlaywrightSeedState> 
     }
   }
 
-  if (!cachedSeedUsers) {
-    for (const [key, userConfig] of Object.entries(env.users) as Array<[PlaywrightSeedUserKey, TestUserConfig]>) {
-      await ensureProfile({
-        adminClient,
-        email: userConfig.email,
-        name: userConfig.label,
-        userId: seededUsers[key].userId,
-      });
-    }
-  }
-
-  const controlPgClient = await createPgClient({
-    connectionString: env.controlDatabaseUrl,
+  const contentPgClient = await createPgClient({
+    connectionString: env.contentDatabaseUrl,
     rootCertificate: env.rootCertificate,
   });
-  const contentPgClient =
-    env.contentDatabaseUrl === env.controlDatabaseUrl
-      ? controlPgClient
-      : await createPgClient({
-          connectionString: env.contentDatabaseUrl,
-          rootCertificate: env.rootCertificate,
-        });
 
   try {
     const projectId = await createSeedProjectWithDatabase({
       name: env.project.name,
       ownerUserId: seededUsers.owner.userId,
-      pgClient: controlPgClient,
       slug: env.project.slug,
     });
     const seedData = await seedSelfHostProjectData({
@@ -1136,15 +1021,11 @@ export const seedPlaywrightEnvironment = async (): Promise<PlaywrightSeedState> 
       storageAdminClient,
     });
     await seedProjectMappingRevision({
-      ownerUserId: seededUsers.owner.userId,
-      pgClient: controlPgClient,
       projectId,
     });
 
     const seedState: PlaywrightSeedState = {
       contentDatabaseUrl: env.contentDatabaseUrl,
-      controlDatabaseUrl: env.controlDatabaseUrl,
-      controlPlaneUrl: env.appUrl,
       generatedAt: new Date().toISOString(),
       projects: {
         project: {
@@ -1159,7 +1040,6 @@ export const seedPlaywrightEnvironment = async (): Promise<PlaywrightSeedState> 
     };
 
     await seedProjectMembers({
-      adminClient,
       authorScopeId: seedData.assignedAuthorId,
       projectId,
       users: seedState.users,
@@ -1168,9 +1048,6 @@ export const seedPlaywrightEnvironment = async (): Promise<PlaywrightSeedState> 
     await writeSeedState(seedState);
     return seedState;
   } finally {
-    if (contentPgClient !== controlPgClient) {
-      await contentPgClient.end();
-    }
-    await controlPgClient.end();
+    await contentPgClient.end();
   }
 };

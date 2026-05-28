@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Lock, Upload } from "lucide-react";
+import { useState } from "react";
+import { Lock } from "lucide-react";
 import { toast } from "sonner";
 
 import { getUserInitials } from "@/lib/control-plane/utils";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
-import { createClient } from "@/lib/supabase/client";
-import { MAX_AVATAR_UPLOAD_BYTES, validateImageUploadFile } from "@/lib/security/upload-validation";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -18,6 +16,7 @@ type ProfileSettingsFormProps = {
   initialAvatarUrl: string | null;
   initialEmail: string | null;
   initialName: string;
+  initialUserId: string;
 };
 
 type UpdateProfileResponse = {
@@ -34,37 +33,19 @@ export function ProfileSettingsForm({
   initialEmail,
   initialName,
 }: ProfileSettingsFormProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl);
-  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl ?? "");
+  const [savedAvatarUrl, setSavedAvatarUrl] = useState(initialAvatarUrl);
   const [email] = useState(initialEmail);
   const [name, setName] = useState(initialName);
   const [savedName, setSavedName] = useState(initialName);
-  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showEmailLockedDialog, setShowEmailLockedDialog] = useState(false);
   const initials = getUserInitials(email);
-  const displayedAvatarUrl = avatarPreviewUrl || avatarUrl;
-  const hasChanges = name.trim() !== savedName || Boolean(selectedAvatarFile);
-
-  useEffect(() => {
-    if (!selectedAvatarFile) {
-      setAvatarPreviewUrl(null);
-      return;
-    }
-
-    const nextPreviewUrl = URL.createObjectURL(selectedAvatarFile);
-    setAvatarPreviewUrl(nextPreviewUrl);
-
-    return () => {
-      URL.revokeObjectURL(nextPreviewUrl);
-    };
-  }, [selectedAvatarFile]);
-
-  const handleAvatarSelection = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    setSelectedAvatarFile(file);
-  };
+  const normalizedAvatarUrl = avatarUrl.trim() || null;
+  const displayedAvatarUrl = normalizedAvatarUrl;
+  const hasChanges =
+    name.trim() !== savedName ||
+    normalizedAvatarUrl !== savedAvatarUrl;
 
   const handleSubmit = async () => {
     const trimmedName = name.trim();
@@ -77,49 +58,19 @@ export function ProfileSettingsForm({
     setIsSaving(true);
 
     try {
-      let nextAvatarUrl: string | null | undefined;
+      const body: {
+        avatarUrl?: string | null;
+        name: string;
+      } = {
+        name: trimmedName,
+      };
 
-      if (selectedAvatarFile) {
-        const validation = await validateImageUploadFile({
-          file: selectedAvatarFile,
-          label: "Avatar image",
-          maxBytes: MAX_AVATAR_UPLOAD_BYTES,
-        });
-        const supabase = createClient();
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError || !user) {
-          throw new Error("Please sign in to continue.");
-        }
-
-        const filePath = `${user.id}/avatar`;
-        const avatarUploadBody =
-          selectedAvatarFile.type === validation.contentType
-            ? selectedAvatarFile
-            : new File([selectedAvatarFile], selectedAvatarFile.name, { type: validation.contentType });
-        const { error: uploadError } = await supabase.storage.from("profile_avatars").upload(filePath, avatarUploadBody, {
-          cacheControl: "3600",
-          contentType: validation.contentType,
-          upsert: true,
-        });
-
-        if (uploadError) {
-          throw new Error(
-            getProductionErrorMessage(uploadError, "Could not upload your avatar right now."),
-          );
-        }
-
-        nextAvatarUrl = supabase.storage.from("profile_avatars").getPublicUrl(filePath).data.publicUrl;
+      if (normalizedAvatarUrl !== savedAvatarUrl) {
+        body.avatarUrl = normalizedAvatarUrl;
       }
 
       const response = await fetch("/api/profile", {
-        body: JSON.stringify({
-          avatarUrl: nextAvatarUrl,
-          name: trimmedName,
-        }),
+        body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
         },
@@ -133,12 +84,8 @@ export function ProfileSettingsForm({
 
       setName(payload.profile.name);
       setSavedName(payload.profile.name);
-      setAvatarUrl(payload.profile.avatarUrl);
-      setSelectedAvatarFile(null);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      setAvatarUrl(payload.profile.avatarUrl ?? "");
+      setSavedAvatarUrl(payload.profile.avatarUrl);
 
       toast.success("Profile updated.");
     } catch (error) {
@@ -163,30 +110,20 @@ export function ProfileSettingsForm({
             <div>
               <p className="text-sm font-medium text-foreground">Avatar</p>
               <p className="text-xs text-muted-foreground">
-                Upload a square image for your account menu and profile.
+                Public image URL for your account menu and profile.
               </p>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarSelection}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => fileInputRef.current?.click()}
+            <Label htmlFor="profile-settings-avatar-url" className="sr-only">
+              Avatar URL
+            </Label>
+            <Input
+              id="profile-settings-avatar-url"
+              value={avatarUrl}
+              onChange={(event) => setAvatarUrl(event.target.value)}
+              placeholder="https://example.com/avatar.png"
+              className="h-10 border-border"
               disabled={isSaving}
-            >
-              <Upload className="h-3.5 w-3.5" />
-              {selectedAvatarFile ? "Change avatar" : "Upload avatar"}
-            </Button>
-            {selectedAvatarFile ? (
-              <p className="text-xs text-muted-foreground">{selectedAvatarFile.name}</p>
-            ) : null}
+            />
           </div>
         </div>
 

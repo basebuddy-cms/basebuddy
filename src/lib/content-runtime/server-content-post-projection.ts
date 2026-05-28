@@ -1,7 +1,5 @@
 import "server-only";
 
-import { createControlPlaneAdminClient } from "@/lib/control-plane/supabase-clients";
-
 import {
   createContentPostListPreview,
   normalizeContentPostsSearch,
@@ -17,28 +15,7 @@ import {
 import type { ContentProjectMapping } from "./mapping";
 import { getContentMappingRevisionCacheKey } from "./mapped-content-runtime-support";
 
-const EXISTING_DB_POST_PROJECTION_STATES_TABLE = "basebuddy_project_content_post_projection_states";
-const EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE = "basebuddy_project_content_post_previews";
-const EXISTING_DB_POST_PROJECTION_UPSERT_BATCH_SIZE = 200;
 const CONTENT_POST_PROJECTION_SHALLOW_OFFSET_LIMIT = 1000;
-
-const isMissingContentProjectionStorageError = (error: {
-  code?: string | null;
-  message?: string | null;
-} | null | undefined) => {
-  const message = error?.message ?? "";
-
-  return (
-    error?.code === "42P01" ||
-    error?.code === "PGRST205" ||
-    error?.code === "PGRST204" ||
-    /basebuddy_project_content_post_projection_states/i.test(message) ||
-    /basebuddy_project_content_post_previews/i.test(message) ||
-    /invalid schema:\s*private/i.test(message) ||
-    /relation .* does not exist/i.test(message) ||
-    /could not find the table/i.test(message)
-  );
-};
 
 export type ContentPostProjectionStateStatus = "building" | "failed" | "ready" | "stale";
 
@@ -68,7 +45,7 @@ export type ContentPostProjectionRow = {
   updatedAt: string;
 };
 
-type StoredContentPostProjectionRow = {
+export type StoredContentPostProjectionRow = {
   author_id: string | null;
   category_ids: string[] | null;
   created_at: string;
@@ -91,8 +68,49 @@ type ContentPostProjectionCursorPayload = {
   value: string;
 };
 
+type ProjectionStoreKeyInput = {
+  mapping: Pick<ContentProjectMapping, "bindingId" | "revisionId" | "revisionVersion">;
+  projectId: string;
+};
+
+const contentPostProjectionStates = new Map<string, ContentPostProjectionState>();
+const contentPostProjectionRows = new Map<string, Map<string, StoredContentPostProjectionRow>>();
+
 const normalizeProjectionIds = (values?: string[] | null) =>
   Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
+
+const getProjectionStoreKey = ({ mapping, projectId }: ProjectionStoreKeyInput) =>
+  `${projectId}:${getContentPostsProjectionKey(mapping)}`;
+
+const cloneContentPostProjectionState = (
+  state: ContentPostProjectionState,
+): ContentPostProjectionState => ({
+  lastError: state.lastError,
+  lastRefreshedAt: state.lastRefreshedAt,
+  processedItems: state.processedItems,
+  progressCursor: state.progressCursor,
+  status: state.status,
+  totalItems: state.totalItems,
+});
+
+const cloneStoredContentPostProjectionRow = (
+  row: StoredContentPostProjectionRow,
+): StoredContentPostProjectionRow => ({
+  author_id: row.author_id,
+  category_ids: normalizeProjectionIds(row.category_ids),
+  created_at: row.created_at,
+  excerpt: row.excerpt,
+  project_id: row.project_id,
+  published_at: row.published_at,
+  refreshed_at: row.refreshed_at,
+  search_text: row.search_text,
+  slug: row.slug,
+  source_post_id: row.source_post_id,
+  status: row.status,
+  tag_ids: normalizeProjectionIds(row.tag_ids),
+  title: row.title,
+  updated_at: row.updated_at,
+});
 
 const getProjectionSortColumn = (sort: ContentPostsSort) => {
   switch (sort) {
@@ -112,13 +130,34 @@ const getProjectionSortColumn = (sort: ContentPostsSort) => {
 const isProjectionSortAscending = (sort: ContentPostsSort) =>
   sort === "created_asc" || sort === "title_asc" || sort === "updated_asc";
 
-const escapePostgrestFilterValue = (value: string) => {
-  if (/^[A-Za-z0-9_.:@+-]+$/.test(value)) {
-    return value;
+const getProjectionSortValue = (row: StoredContentPostProjectionRow, sort: ContentPostsSort) => {
+  const sortColumn = getProjectionSortColumn(sort);
+
+  if (sortColumn === "created_at") {
+    return row.created_at;
   }
 
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  if (sortColumn === "title") {
+    return row.title;
+  }
+
+  return row.updated_at;
 };
+
+const compareStoredContentPostProjectionRows =
+  (sort: ContentPostsSort) =>
+  (left: StoredContentPostProjectionRow, right: StoredContentPostProjectionRow) => {
+    const sortDirection = isProjectionSortAscending(sort) ? 1 : -1;
+    const sortComparison = getProjectionSortValue(left, sort).localeCompare(
+      getProjectionSortValue(right, sort),
+    );
+
+    if (sortComparison !== 0) {
+      return sortComparison * sortDirection;
+    }
+
+    return left.source_post_id.localeCompare(right.source_post_id);
+  };
 
 const createContentPostProjectionCursorToken = (payload: ContentPostProjectionCursorPayload) =>
   Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -161,65 +200,58 @@ const createContentPostProjectionCursorFromRow = ({
 }: {
   row: StoredContentPostProjectionRow;
   sort: ContentPostsSort;
-}) => {
-  const sortColumn = getProjectionSortColumn(sort);
-  const value =
-    sortColumn === "created_at"
-      ? row.created_at
-      : sortColumn === "title"
-        ? row.title
-        : row.updated_at;
-
-  return createContentPostProjectionCursorToken({
+}) =>
+  createContentPostProjectionCursorToken({
     sort,
     sourcePostId: row.source_post_id,
-    value,
+    value: getProjectionSortValue(row, sort),
   });
-};
 
-const applyContentPostProjectionCursor = ({
-  cursor,
-  query,
-  sort,
+const mapContentPostProjectionRowForStorage = ({
+  row,
 }: {
-  cursor: string | null | undefined;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  query: any;
-  sort: ContentPostsSort;
-}) => {
-  const payload = parseContentPostProjectionCursorToken(cursor, sort);
+  row: ContentPostProjectionRow;
+}): StoredContentPostProjectionRow => ({
+  author_id: row.authorId,
+  category_ids: normalizeProjectionIds(row.categoryIds),
+  created_at: row.createdAt,
+  excerpt: row.excerpt,
+  project_id: row.projectId,
+  published_at: row.publishedAt,
+  refreshed_at: row.refreshedAt,
+  search_text: row.searchText,
+  slug: row.slug,
+  source_post_id: row.sourcePostId,
+  status: row.status,
+  tag_ids: normalizeProjectionIds(row.tagIds),
+  title: row.title,
+  updated_at: row.updatedAt,
+});
 
-  if (!payload) {
-    return query;
-  }
-
-  const sortColumn = getProjectionSortColumn(sort);
-  const sortOperator = isProjectionSortAscending(sort) ? "gt" : "lt";
-  const sortValue = escapePostgrestFilterValue(payload.value);
-  const sourcePostId = escapePostgrestFilterValue(payload.sourcePostId);
-
-  return query.or(
-    `${sortColumn}.${sortOperator}.${sortValue},and(${sortColumn}.eq.${sortValue},source_post_id.gt.${sourcePostId})`,
-  );
-};
-
-const applyContentPostProjectionFilters = ({
-  accessibleAuthorIds,
-  categoryIds,
+const getStoredContentPostProjectionRows = ({
   mapping,
   projectId,
-  query,
-  search,
-  status,
-  tagIds,
+}: ProjectionStoreKeyInput) =>
+  Array.from(
+    contentPostProjectionRows.get(getProjectionStoreKey({ mapping, projectId }))?.values() ?? [],
+  ).map(cloneStoredContentPostProjectionRow);
+
+const getFilteredContentPostProjectionRows = ({
+  accessibleAuthorIds = null,
+  categoryIds = null,
+  mapping,
+  projectId,
+  search = "",
+  sort = "updated_desc",
+  status = "all",
+  tagIds = null,
 }: {
   accessibleAuthorIds?: string[] | null;
   categoryIds?: string[] | null;
   mapping: ContentProjectMapping;
   projectId: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  query: any;
   search?: string;
+  sort?: ContentPostsSort;
   status?: ContentPostsStatusFilter;
   tagIds?: string[] | null;
 }) => {
@@ -228,85 +260,59 @@ const applyContentPostProjectionFilters = ({
   const normalizedTagIds = normalizeProjectionIds(tagIds);
   const normalizedSearch = normalizeContentPostsSearch(search ?? "").toLowerCase();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let nextQuery: any = query
-    .eq("project_id", projectId)
-    .eq("mapping_revision_key", getContentPostsProjectionKey(mapping));
-
-  if (accessibleAuthorIds !== null && accessibleAuthorIds !== undefined) {
-    if (!normalizedAuthorIds.length) {
-      return nextQuery.eq("source_post_id", "__no_projection_match__");
-    }
-
-    nextQuery = nextQuery.in("author_id", normalizedAuthorIds);
+  if (accessibleAuthorIds !== null && accessibleAuthorIds !== undefined && !normalizedAuthorIds.length) {
+    return [];
   }
 
-  if (normalizedCategoryIds.length) {
-    nextQuery = nextQuery.overlaps("category_ids", normalizedCategoryIds);
-  }
+  return getStoredContentPostProjectionRows({ mapping, projectId })
+    .filter((row) => {
+      if (
+        accessibleAuthorIds !== null &&
+        accessibleAuthorIds !== undefined &&
+        (!row.author_id || !normalizedAuthorIds.includes(row.author_id))
+      ) {
+        return false;
+      }
 
-  if (normalizedTagIds.length) {
-    nextQuery = nextQuery.overlaps("tag_ids", normalizedTagIds);
-  }
+      if (
+        normalizedCategoryIds.length &&
+        !normalizeProjectionIds(row.category_ids).some((categoryId) =>
+          normalizedCategoryIds.includes(categoryId),
+        )
+      ) {
+        return false;
+      }
 
-  if (status && status !== "all") {
-    nextQuery = nextQuery.eq("status", status);
-  }
+      if (
+        normalizedTagIds.length &&
+        !normalizeProjectionIds(row.tag_ids).some((tagId) => normalizedTagIds.includes(tagId))
+      ) {
+        return false;
+      }
 
-  if (normalizedSearch) {
-    nextQuery = nextQuery.ilike("search_text", `%${normalizedSearch}%`);
-  }
+      if (status !== "all" && row.status !== status) {
+        return false;
+      }
 
-  return nextQuery;
+      if (
+        normalizedSearch &&
+        !normalizeContentPostsSearch(row.search_text).toLowerCase().includes(normalizedSearch)
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort(compareStoredContentPostProjectionRows(sort));
 };
-
-const mapContentPostProjectionState = (row: {
-  last_error?: string | null;
-  last_refreshed_at?: string | null;
-  processed_items?: number | null;
-  progress_cursor?: string | null;
-  status?: ContentPostProjectionStateStatus | null;
-  total_items?: number | null;
-}) => ({
-  lastError: row.last_error ?? null,
-  lastRefreshedAt: row.last_refreshed_at ?? null,
-  processedItems: Number(row.processed_items ?? 0),
-  progressCursor: row.progress_cursor ?? null,
-  status: (row.status ?? "stale") as ContentPostProjectionStateStatus,
-  totalItems: Number(row.total_items ?? 0),
-});
-
-const mapContentPostProjectionRowForStorage = ({
-  mapping,
-  row,
-}: {
-  mapping: ContentProjectMapping;
-  row: ContentPostProjectionRow;
-}) => ({
-  author_id: row.authorId,
-  category_ids: row.categoryIds,
-  created_at: row.createdAt,
-  excerpt: row.excerpt,
-  mapping_revision_id: mapping.revisionId,
-  mapping_revision_key: getContentPostsProjectionKey(mapping),
-  mapping_revision_version: mapping.revisionVersion ?? 0,
-  project_id: row.projectId,
-  published_at: row.publishedAt,
-  refreshed_at: row.refreshedAt,
-  search_text: row.searchText,
-  slug: row.slug,
-  source_post_id: row.sourcePostId,
-  status: row.status,
-  tag_ids: row.tagIds,
-  title: row.title,
-  updated_at: row.updatedAt,
-});
 
 export const getContentPostsProjectionKey = (
   mapping: Pick<ContentProjectMapping, "bindingId" | "revisionId" | "revisionVersion">,
 ) => getContentMappingRevisionCacheKey(mapping);
 
-export { isMissingContentProjectionStorageError };
+export const isMissingContentProjectionStorageError = (
+  _error?: { code?: string | null; message?: string | null } | null,
+) => false;
 
 export const mapContentProjectedPostPreview = (
   row: Pick<
@@ -350,28 +356,9 @@ export const getContentPostsProjectionState = async ({
   mapping: ContentProjectMapping;
   projectId: string;
 }): Promise<ContentPostProjectionState | null> => {
-  const supabase = createControlPlaneAdminClient();
-  const { data, error } = await supabase
-    .schema("private")
-    .from(EXISTING_DB_POST_PROJECTION_STATES_TABLE)
-    .select("status,total_items,processed_items,progress_cursor,last_refreshed_at,last_error,mapping_revision_key")
-    .eq("project_id", projectId)
-    .eq("mapping_revision_key", getContentPostsProjectionKey(mapping))
-    .maybeSingle();
+  const state = contentPostProjectionStates.get(getProjectionStoreKey({ mapping, projectId }));
 
-  if (error) {
-    if (isMissingContentProjectionStorageError(error)) {
-      return null;
-    }
-
-    throw error;
-  }
-
-  if (!data) {
-    return null;
-  }
-
-  return mapContentPostProjectionState(data);
+  return state ? cloneContentPostProjectionState(state) : null;
 };
 
 export const getContentPostProjectionAuthorId = async ({
@@ -383,26 +370,12 @@ export const getContentPostProjectionAuthorId = async ({
   postId: string;
   projectId: string;
 }): Promise<string | null> => {
-  const supabase = createControlPlaneAdminClient();
-  const { data, error } = await supabase
-    .schema("private")
-    .from(EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE)
-    .select("author_id")
-    .eq("project_id", projectId)
-    .eq("mapping_revision_key", getContentPostsProjectionKey(mapping))
-    .eq("source_post_id", postId)
-    .maybeSingle();
+  const row = contentPostProjectionRows
+    .get(getProjectionStoreKey({ mapping, projectId }))
+    ?.get(postId);
 
-  if (error) {
-    if (isMissingContentProjectionStorageError(error)) {
-      return null;
-    }
-
-    throw error;
-  }
-
-  return typeof data?.author_id === "string" && data.author_id.trim()
-    ? data.author_id
+  return typeof row?.author_id === "string" && row.author_id.trim()
+    ? row.author_id
     : null;
 };
 
@@ -417,38 +390,17 @@ export const saveContentPostsProjectionState = async ({
   totalItems,
 }: Partial<Pick<ContentPostProjectionState, "processedItems" | "progressCursor">> &
   Omit<ContentPostProjectionState, "processedItems" | "progressCursor"> & {
-  mapping: ContentProjectMapping;
-  projectId: string;
-}) => {
-  const supabase = createControlPlaneAdminClient();
-  const { error } = await supabase
-    .schema("private")
-    .from(EXISTING_DB_POST_PROJECTION_STATES_TABLE)
-    .upsert(
-      {
-        last_error: lastError,
-        last_refreshed_at: lastRefreshedAt,
-        mapping_revision_id: mapping.revisionId,
-        mapping_revision_key: getContentPostsProjectionKey(mapping),
-        mapping_revision_version: mapping.revisionVersion ?? 0,
-        processed_items: processedItems,
-        progress_cursor: progressCursor,
-        project_id: projectId,
-        status,
-        total_items: totalItems,
-      },
-      {
-        onConflict: "project_id,mapping_revision_key",
-      },
-    );
-
-  if (error) {
-    if (isMissingContentProjectionStorageError(error)) {
-      return;
-    }
-
-    throw error;
-  }
+    mapping: ContentProjectMapping;
+    projectId: string;
+  }) => {
+  contentPostProjectionStates.set(getProjectionStoreKey({ mapping, projectId }), {
+    lastError,
+    lastRefreshedAt,
+    processedItems,
+    progressCursor,
+    status,
+    totalItems,
+  });
 };
 
 export const markContentPostsProjectionStale = async ({
@@ -488,28 +440,26 @@ export const upsertContentPostProjectionRows = async ({
     return;
   }
 
-  const supabase = createControlPlaneAdminClient();
+  const storeKey = getProjectionStoreKey({ mapping, projectId });
+  const existingRows = contentPostProjectionRows.get(storeKey) ?? new Map<string, StoredContentPostProjectionRow>();
 
-  for (let index = 0; index < rows.length; index += EXISTING_DB_POST_PROJECTION_UPSERT_BATCH_SIZE) {
-    const nextBatch = rows
-      .slice(index, index + EXISTING_DB_POST_PROJECTION_UPSERT_BATCH_SIZE)
-      .map((row) => mapContentPostProjectionRowForStorage({ mapping, row: { ...row, projectId } }));
-
-    const { error } = await supabase
-      .schema("private")
-      .from(EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE)
-      .upsert(nextBatch, {
-        onConflict: "project_id,mapping_revision_key,source_post_id",
-      });
-
-    if (error) {
-      if (isMissingContentProjectionStorageError(error)) {
-        return;
-      }
-
-      throw error;
+  for (const row of rows) {
+    if (!row.sourcePostId.trim()) {
+      continue;
     }
+
+    existingRows.set(
+      row.sourcePostId,
+      mapContentPostProjectionRowForStorage({
+        row: {
+          ...row,
+          projectId,
+        },
+      }),
+    );
   }
+
+  contentPostProjectionRows.set(storeKey, existingRows);
 };
 
 export const deleteStaleContentPostProjectionRows = async ({
@@ -523,31 +473,26 @@ export const deleteStaleContentPostProjectionRows = async ({
   refreshedAt: string;
   sourcePostIds?: string[] | null;
 }) => {
-  const normalizedSourcePostIds = normalizeProjectionIds(sourcePostIds);
-  let query = createControlPlaneAdminClient()
-    .schema("private")
-    .from(EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE)
-    .delete()
-    .eq("project_id", projectId)
-    .eq("mapping_revision_key", getContentPostsProjectionKey(mapping))
-    .neq("refreshed_at", refreshedAt);
+  const store = contentPostProjectionRows.get(getProjectionStoreKey({ mapping, projectId }));
 
-  if (sourcePostIds !== null) {
-    if (!normalizedSourcePostIds.length) {
-      return;
-    }
-
-    query = query.in("source_post_id", normalizedSourcePostIds);
+  if (!store?.size) {
+    return;
   }
 
-  const { error } = await query;
+  const normalizedSourcePostIds = normalizeProjectionIds(sourcePostIds);
 
-  if (error) {
-    if (isMissingContentProjectionStorageError(error)) {
-      return;
+  if (sourcePostIds !== null && !normalizedSourcePostIds.length) {
+    return;
+  }
+
+  for (const [sourcePostId, row] of Array.from(store.entries())) {
+    if (sourcePostIds !== null && !normalizedSourcePostIds.includes(sourcePostId)) {
+      continue;
     }
 
-    throw error;
+    if (row.refreshed_at !== refreshedAt) {
+      store.delete(sourcePostId);
+    }
   }
 };
 
@@ -567,29 +512,16 @@ export const countContentPostsProjection = async ({
   search?: string;
   status?: ContentPostsStatusFilter;
   tagIds?: string[] | null;
-}) => {
-  const supabase = createControlPlaneAdminClient();
-  const query = applyContentPostProjectionFilters({
+}) =>
+  getFilteredContentPostProjectionRows({
     accessibleAuthorIds,
     categoryIds,
     mapping,
     projectId,
-    query: supabase
-      .schema("private")
-      .from(EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE)
-      .select("source_post_id", { count: "exact", head: true }),
     search,
     status,
     tagIds,
-  });
-  const { count, error } = await query;
-
-  if (error) {
-    throw error;
-  }
-
-  return Number(count ?? 0);
-};
+  }).length;
 
 export const listContentPostProjectionPreviews = async ({
   accessibleAuthorIds = null,
@@ -609,35 +541,17 @@ export const listContentPostProjectionPreviews = async ({
   sort?: ContentPostsSort;
   status?: ContentPostsStatusFilter;
   tagIds?: string[] | null;
-}) => {
-  const supabase = createControlPlaneAdminClient();
-  const query = applyContentPostProjectionFilters({
+}) =>
+  getFilteredContentPostProjectionRows({
     accessibleAuthorIds,
     categoryIds,
     mapping,
     projectId,
-    query: supabase
-      .schema("private")
-      .from(EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE)
-      .select(
-        "source_post_id,title,slug,excerpt,status,created_at,updated_at,published_at,author_id,category_ids,tag_ids",
-      ),
     search,
+    sort,
     status,
     tagIds,
-  })
-    .order(getProjectionSortColumn(sort), { ascending: isProjectionSortAscending(sort) })
-    .order("source_post_id", { ascending: true });
-  const { data, error } = await query;
-
-  if (error) {
-    throw error;
-  }
-
-  return ((data ?? []) as StoredContentPostProjectionRow[]).map((row) =>
-    mapContentProjectedPostPreview(row),
-  );
-};
+  }).map((row) => mapContentProjectedPostPreview(row));
 
 export const getContentPostsProjectionPage = async ({
   accessibleAuthorIds = null,
@@ -668,6 +582,16 @@ export const getContentPostsProjectionPage = async ({
   useCursorPagination?: boolean;
   useWindowPagination?: boolean;
 }) => {
+  const filteredRows = getFilteredContentPostProjectionRows({
+    accessibleAuthorIds,
+    categoryIds,
+    mapping,
+    projectId,
+    search,
+    sort,
+    status,
+    tagIds,
+  });
   const normalizedProjectionPageSize =
     Number.isFinite(pageSize) && pageSize ? Math.max(1, Math.min(100, Math.floor(pageSize))) : 20;
   const requestedProjectionPage =
@@ -680,85 +604,52 @@ export const getContentPostsProjectionPage = async ({
   const resolvedPage = shouldUseCursorPagination && !hasCursor ? 1 : page;
   const resolvedTotalItems =
     useWindowPagination || shouldUseCursorPagination
-      ? (totalItems ?? 0)
-      : totalItems ??
-        (await countContentPostsProjection({
-          accessibleAuthorIds,
-          categoryIds,
-          mapping,
-          projectId,
-          search,
-          status,
-          tagIds,
-        }));
-  const pagination = useWindowPagination || shouldUseCursorPagination
-    ? resolveContentWindowPagination({
-        hasNextPage: false,
-        page: resolvedPage,
-        pageSize,
-        totalItemsHint: resolvedTotalItems,
-        visibleItemsCount: 0,
-      })
-	    : resolveContentPagination({
-        page,
-        pageSize,
-        totalItems: resolvedTotalItems,
-      });
-  const from = pagination.offset;
-  const to = Math.max(
+      ? (totalItems ?? filteredRows.length)
+      : (totalItems ?? filteredRows.length);
+  const pagination =
+    useWindowPagination || shouldUseCursorPagination
+      ? resolveContentWindowPagination({
+          hasNextPage: false,
+          page: resolvedPage,
+          pageSize,
+          totalItemsHint: resolvedTotalItems,
+          visibleItemsCount: 0,
+        })
+      : resolveContentPagination({
+          page,
+          pageSize,
+          totalItems: resolvedTotalItems,
+        });
+
+  const cursorPayload = shouldUseCursorPagination
+    ? parseContentPostProjectionCursorToken(cursor, sort)
+    : null;
+  const cursorRowIndex = cursorPayload
+    ? filteredRows.findIndex((row) => row.source_post_id === cursorPayload.sourcePostId)
+    : -1;
+  const from = shouldUseCursorPagination
+    ? Math.max(0, cursorRowIndex + 1)
+    : pagination.offset;
+  const requestedRows = filteredRows.slice(
     from,
-    from + pagination.pageSize - 1 + (useWindowPagination && !shouldUseCursorPagination ? 1 : 0),
+    from + pagination.pageSize + (useWindowPagination || shouldUseCursorPagination ? 1 : 0),
   );
-
-  const supabase = createControlPlaneAdminClient();
-  let query = applyContentPostProjectionFilters({
-    accessibleAuthorIds,
-    categoryIds,
-    mapping,
-    projectId,
-    query: supabase
-      .schema("private")
-      .from(EXISTING_DB_POST_PROJECTION_PREVIEWS_TABLE)
-      .select(
-        "source_post_id,title,slug,excerpt,status,created_at,updated_at,published_at,author_id,category_ids,tag_ids",
-      ),
-    search,
-    status,
-    tagIds,
-  })
-    .order(getProjectionSortColumn(sort), { ascending: isProjectionSortAscending(sort) })
-    .order("source_post_id", { ascending: true });
-
-  if (shouldUseCursorPagination) {
-    query = applyContentPostProjectionCursor({
-      cursor,
-      query,
-      sort,
-    }).limit(pagination.pageSize + 1);
-  } else {
-    query = query.range(from, to);
-  }
-  const { data, error } = await query;
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = (data ?? []) as StoredContentPostProjectionRow[];
   const hasNextPage =
-    (useWindowPagination || shouldUseCursorPagination) && rows.length > pagination.pageSize;
-  const visibleRows = useWindowPagination || shouldUseCursorPagination
-    ? rows.slice(0, pagination.pageSize)
-    : rows;
-  const windowPagination = useWindowPagination || shouldUseCursorPagination
-    ? resolveContentWindowPagination({
-        hasNextPage,
-        page: resolvedPage,
-        pageSize,
-        totalItemsHint: resolvedTotalItems,
-        visibleItemsCount: visibleRows.length,
-      })
-    : pagination;
+    (useWindowPagination || shouldUseCursorPagination) && requestedRows.length > pagination.pageSize;
+  const visibleRows =
+    useWindowPagination || shouldUseCursorPagination
+      ? requestedRows.slice(0, pagination.pageSize)
+      : requestedRows;
+  const windowPagination =
+    useWindowPagination || shouldUseCursorPagination
+      ? resolveContentWindowPagination({
+          hasNextPage,
+          page: resolvedPage,
+          pageSize,
+          totalItemsHint: resolvedTotalItems,
+          visibleItemsCount: visibleRows.length,
+        })
+      : pagination;
   const nextCursor =
     shouldUseCursorPagination && hasNextPage && visibleRows.length
       ? createContentPostProjectionCursorFromRow({
@@ -773,8 +664,6 @@ export const getContentPostsProjectionPage = async ({
       hasPreviousPage: shouldUseCursorPagination ? hasCursor : windowPagination.hasPreviousPage,
       nextCursor,
     },
-    posts: visibleRows.map((row) =>
-      mapContentProjectedPostPreview(row),
-    ),
+    posts: visibleRows.map((row) => mapContentProjectedPostPreview(row)),
   };
 };

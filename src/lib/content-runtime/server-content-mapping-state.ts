@@ -2,15 +2,7 @@ import "server-only";
 
 import type { Client } from "pg";
 
-import { getProductionErrorMessage } from "@/lib/errors/user-facing";
-import {
-  APP_SETUP_REQUIRED_MESSAGE,
-  isControlPlaneSetupError,
-} from "@/lib/control-plane/server";
-import {
-  createControlPlaneAdminClient,
-  createControlPlaneServerClient,
-} from "@/lib/control-plane/supabase-clients";
+import { getConfigProjectContentMapping } from "@/lib/basebuddy-config/projects";
 
 import {
   buildContentAutoMappingResult,
@@ -18,9 +10,7 @@ import {
   type ContentSchemaIntrospection,
 } from "./introspection";
 import {
-  createDefaultContentMappingConfig,
   hasReadyContentMapping,
-  normalizeContentProjectMapping,
   type ContentProjectMapping,
 } from "./mapping";
 import {
@@ -32,22 +22,6 @@ type ContentDatabaseClient = Pick<Client, "query">;
 
 type ContentMappingContext = {
   connectionString: string | null;
-};
-
-type ProjectContentMappingRow = {
-  binding_id: string;
-  binding_mode: string;
-  binding_status: string;
-  canonical_schema_version: number;
-  install_config: Record<string, unknown> | null;
-  mapping_config: Record<string, unknown> | null;
-  revision_created_at: string | null;
-  revision_id: string | null;
-  revision_source: string | null;
-  revision_version: number | null;
-  scope_config: Record<string, unknown> | null;
-  scope_mode: string;
-  storage_bucket: string | null;
 };
 
 type WithContentDatabaseClient = <T>(
@@ -66,16 +40,6 @@ const cachedContentSchemaIntrospections = new Map<
   }
 >();
 const pendingContentSchemaIntrospections = new Map<string, Promise<ContentSchemaIntrospection>>();
-
-const createFallbackRuntimeProjectMapping = (projectId: string): ContentProjectMapping =>
-  normalizeContentProjectMapping({
-    binding_id: projectId,
-    binding_mode: "mapped_content",
-    binding_status: "draft",
-    mapping_config: createDefaultContentMappingConfig(),
-    revision_id: null,
-    revision_version: null,
-  });
 
 export const loadStoredContentProjectMapping = async <TContext extends object>({
   context,
@@ -101,73 +65,10 @@ export const loadStoredContentProjectMapping = async <TContext extends object>({
     ensureReadAccess(resolvedContext);
   }
 
-  const supabase = enforceReadPermission
-    ? await createControlPlaneServerClient()
-    : createControlPlaneAdminClient();
-  const rpcName = enforceReadPermission
-    ? "get_project_content_mapping"
-    : "get_project_content_runtime_mapping";
-  const { data, error } = await supabase.rpc(rpcName, {
-    p_project_id: projectId,
-  });
-
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      if (!enforceReadPermission) {
-        const fallbackSupabase = await createControlPlaneServerClient();
-        const { data: fallbackData, error: fallbackError } = await fallbackSupabase.rpc(
-          "get_project_content_mapping",
-          {
-            p_project_id: projectId,
-          },
-        );
-
-        if (!fallbackError) {
-          const fallbackRow = ((Array.isArray(fallbackData) ? fallbackData[0] : fallbackData) ??
-            null) as ProjectContentMappingRow | null;
-
-          if (fallbackRow?.binding_id) {
-            return {
-              context: resolvedContext,
-              mapping: normalizeContentProjectMapping({
-                ...fallbackRow,
-                mapping_config: fallbackRow.mapping_config ?? createDefaultContentMappingConfig(),
-              }),
-            };
-          }
-        }
-
-        console.warn(
-          "[content-runtime][mapping] Falling back to a draft runtime mapping because the runtime RPC is unavailable.",
-          {
-            error,
-            fallbackError,
-            projectId,
-          },
-        );
-        return {
-          context: resolvedContext,
-          mapping: createFallbackRuntimeProjectMapping(projectId),
-        };
-      }
-
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProductionErrorMessage(error, "Could not load the content mapping right now."));
-  }
-
-  const row = ((Array.isArray(data) ? data[0] : data) ?? null) as ProjectContentMappingRow | null;
-
-  if (!row?.binding_id) {
-    throw new Error("Project content binding not found.");
-  }
-
   return {
     context: resolvedContext,
-    mapping: normalizeContentProjectMapping({
-      ...row,
-      mapping_config: row.mapping_config ?? createDefaultContentMappingConfig(),
+    mapping: await getConfigProjectContentMapping({
+      projectId,
     }),
   };
 };

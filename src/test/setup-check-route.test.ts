@@ -2,18 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   enforceRateLimitMock,
-  getAuthEndpointSetupSectionMock,
-  getControlPlaneSchemaSetupSectionMock,
-  getDatabaseConnectionSetupSectionsMock,
-  getInstallSetupStatusMock,
-  isInstallSetupReadyMock,
+  getBaseBuddyConfigSetupStatusMock,
+  isBaseBuddyConfigSetupReadyMock,
 } = vi.hoisted(() => ({
   enforceRateLimitMock: vi.fn(() => null),
-  getAuthEndpointSetupSectionMock: vi.fn(),
-  getControlPlaneSchemaSetupSectionMock: vi.fn(),
-  getDatabaseConnectionSetupSectionsMock: vi.fn(),
-  getInstallSetupStatusMock: vi.fn(),
-  isInstallSetupReadyMock: vi.fn(),
+  getBaseBuddyConfigSetupStatusMock: vi.fn(),
+  isBaseBuddyConfigSetupReadyMock: vi.fn(),
 }));
 
 vi.mock("@/lib/api/request-guards", async (importOriginal) => {
@@ -25,12 +19,9 @@ vi.mock("@/lib/api/request-guards", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/self-host/install-runtime", () => ({
-  getAuthEndpointSetupSection: getAuthEndpointSetupSectionMock,
-  getControlPlaneSchemaSetupSection: getControlPlaneSchemaSetupSectionMock,
-  getDatabaseConnectionSetupSections: getDatabaseConnectionSetupSectionsMock,
-  getInstallSetupStatus: getInstallSetupStatusMock,
-  isInstallSetupReady: isInstallSetupReadyMock,
+vi.mock("@/lib/basebuddy-config/setup", () => ({
+  getBaseBuddyConfigSetupStatus: getBaseBuddyConfigSetupStatusMock,
+  isBaseBuddyConfigSetupReady: isBaseBuddyConfigSetupReadyMock,
 }));
 
 import { POST } from "@/app/api/setup/check/route";
@@ -38,49 +29,30 @@ import { POST } from "@/app/api/setup/check/route";
 describe("setup check route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getControlPlaneSchemaSetupSectionMock.mockResolvedValue({
-      checks: [],
-      description: "Required database setup for BaseBuddy.",
-      status: "ready",
-      title: "BaseBuddy tables",
-    });
-    getAuthEndpointSetupSectionMock.mockResolvedValue({
-      checks: [],
-      description: "Checks that Supabase Auth is reachable for sign-in.",
-      status: "ready",
-      title: "Auth endpoint",
-    });
-    getDatabaseConnectionSetupSectionsMock.mockResolvedValue([
-      {
-        checks: [],
-        description: "Checks that BaseBuddy can connect to this Postgres database.",
-        status: "ready",
-        title: "Database",
-      },
-    ]);
-    getInstallSetupStatusMock.mockReturnValue({
+    getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
+      configPath: "/repo/basebuddy.config.json",
       sections: [
         {
           checks: [
             {
-              key: "BASEBUDDY_SUPABASE_SECRET_KEY",
-              label: "Server key",
+              key: "BASEBUDDY_AUTH_SECRET",
+              label: "Auth secret",
               required: true,
               status: "ready",
               value: "set:abcd1234",
             },
           ],
-          description: "App configuration required for this self-host install.",
+          description: "Local config file readiness.",
           status: "ready",
-          title: "App configuration",
+          title: "Environment values",
         },
       ],
-      topology: "unified",
+      topology: "config-file",
     });
-    isInstallSetupReadyMock.mockReturnValue(true);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(true);
   });
 
-  it("returns only setup readiness after setup is complete", async () => {
+  it("returns setup readiness and redacted status after setup is complete", async () => {
     const response = await POST(
       new Request("http://localhost/api/setup/check", {
         body: "{}",
@@ -92,6 +64,26 @@ describe("setup check route", () => {
 
     expect(body).toEqual({
       ready: true,
+      status: {
+        configPath: "/repo/basebuddy.config.json",
+        sections: [
+          {
+            checks: [
+              {
+                key: "BASEBUDDY_AUTH_SECRET",
+                label: "Auth secret",
+                required: true,
+                status: "ready",
+                value: "set:abcd1234",
+              },
+            ],
+            description: "Local config file readiness.",
+            status: "ready",
+            title: "Environment values",
+          },
+        ],
+        topology: "config-file",
+      },
     });
     expect(enforceRateLimitMock).toHaveBeenCalledWith({
       bucket: "api:setup-check",
@@ -100,21 +92,15 @@ describe("setup check route", () => {
       request: expect.any(Request),
       windowMs: 60_000,
     });
-    expect(getInstallSetupStatusMock).toHaveBeenCalledWith({
-      additionalSections: [
-        expect.objectContaining({ title: "Auth endpoint" }),
-        expect.objectContaining({ title: "Database" }),
-      ],
-      controlPlaneSchemaSection: expect.objectContaining({
-        title: "BaseBuddy tables",
-      }),
+    expect(getBaseBuddyConfigSetupStatusMock).toHaveBeenCalledWith({
+      checkContentDatabase: true,
     });
     expect(JSON.stringify(body)).not.toContain("secret-key");
-    expect(JSON.stringify(body)).not.toContain("BASEBUDDY_SUPABASE_SECRET_KEY");
+    expect(JSON.stringify(body)).not.toContain("authSecret");
   });
 
   it("returns diagnostics while setup is incomplete", async () => {
-    isInstallSetupReadyMock.mockReturnValueOnce(false);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValueOnce(false);
 
     const response = await POST(
       new Request("http://localhost/api/setup/check", {
@@ -128,23 +114,24 @@ describe("setup check route", () => {
     expect(body).toEqual({
       ready: false,
       status: {
+        configPath: "/repo/basebuddy.config.json",
         sections: [
           {
             checks: [
               {
-                key: "BASEBUDDY_SUPABASE_SECRET_KEY",
-                label: "Server key",
+                key: "BASEBUDDY_AUTH_SECRET",
+                label: "Auth secret",
                 required: true,
                 status: "ready",
                 value: "set:abcd1234",
               },
             ],
-            description: "App configuration required for this self-host install.",
+            description: "Local config file readiness.",
             status: "ready",
-            title: "App configuration",
+            title: "Environment values",
           },
         ],
-        topology: "unified",
+        topology: "config-file",
       },
     });
   });
@@ -160,7 +147,7 @@ describe("setup check route", () => {
     );
 
     expect(response.status).toBe(429);
-    expect(getControlPlaneSchemaSetupSectionMock).not.toHaveBeenCalled();
+    expect(getBaseBuddyConfigSetupStatusMock).not.toHaveBeenCalled();
   });
 
   it("rejects oversized setup verification bodies", async () => {
@@ -172,6 +159,6 @@ describe("setup check route", () => {
     );
 
     expect(response.status).toBe(413);
-    expect(getControlPlaneSchemaSetupSectionMock).not.toHaveBeenCalled();
+    expect(getBaseBuddyConfigSetupStatusMock).not.toHaveBeenCalled();
   });
 });

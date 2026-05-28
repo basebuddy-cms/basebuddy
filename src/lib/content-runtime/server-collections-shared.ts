@@ -65,9 +65,9 @@ export const createEmptyContentCategoriesPage = (
   pagination: createEmptyContentPagination(input),
 });
 
-export const ensureContentPlaneConnection = (context: ContentProjectContext) => {
+export const ensureContentDatabaseConnection = (context: ContentProjectContext) => {
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 };
 

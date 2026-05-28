@@ -45,6 +45,6 @@ describe("project managed storage route errors", () => {
         new Error("SignatureDoesNotMatch"),
         "files",
       ),
-    ).toBe("We couldn't complete the storage request. Check upload storage and try again.");
+    ).toBe("We couldn't complete the storage request. Check media storage and try again.");
   });
 });

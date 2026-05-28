@@ -39,13 +39,6 @@ vi.mock("@/lib/control-plane/member-invitations-server", () => ({
   getProjectMemberInvitationPreview: getProjectMemberInvitationPreviewMock,
 }));
 
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    auth: {
-      signOut: vi.fn(),
-    },
-  }),
-}));
 
 describe("project invitation page", () => {
   beforeEach(() => {

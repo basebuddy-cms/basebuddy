@@ -1,17 +1,14 @@
 import "server-only";
 
-import type { User } from "@supabase/supabase-js";
 import { cache } from "react";
 
-import { getProductionErrorMessage } from "@/lib/errors/user-facing";
 import {
-  APP_SETUP_REQUIRED_MESSAGE,
   getAuthenticatedApiRequestContext,
-  isControlPlaneSetupError,
+  type AuthenticatedApiUser,
 } from "@/lib/control-plane/server";
 import type { ProjectMemberAccess } from "@/lib/control-plane/permissions";
-import { normalizeProjectMemberAuthorScopeCanPublish } from "@/lib/control-plane/members";
-import { getInstallRuntimeContext } from "@/lib/self-host/install-runtime";
+import { getConfigContentRuntimeContext } from "@/lib/basebuddy-config/install";
+import { getConfigProjectAccessContext } from "@/lib/basebuddy-config/projects";
 import {
   getCachedProjectRuntimeValue,
   invalidateProjectRuntimeCacheGroups,
@@ -27,19 +24,6 @@ import {
   type ContentSchemaOptions,
 } from "./shared";
 
-type ProjectMemberAccessRow = {
-  author_scopes:
-    | Array<{
-        canPublish?: boolean;
-        can_publish?: boolean;
-        cmsAuthorId?: string;
-        cms_author_id?: string;
-      }>
-    | null;
-  permission_keys: string[] | null;
-  role_keys: string[] | null;
-};
-
 export type ContentProjectContext = {
   apiUrl: string | null;
   connectionString: string | null;
@@ -48,7 +32,7 @@ export type ContentProjectContext = {
   projectId: string;
   projectSlug: string;
   schemaOptions: ContentSchemaOptions;
-  user: User;
+  user: AuthenticatedApiUser;
 };
 
 export type ContentProjectAccessSnapshot = Omit<
@@ -61,86 +45,47 @@ const CONTENT_PROJECT_ACCESS_STALE_WHILE_REVALIDATE_MS = 60_000;
 const CONTENT_PROJECT_CONTEXT_CACHE_TTL_MS = 15_000;
 const CONTENT_PROJECT_CONTEXT_STALE_WHILE_REVALIDATE_MS = 15_000;
 
-const normalizeProjectMemberAccess = (row: ProjectMemberAccessRow | null): ProjectMemberAccess => ({
-  authorScopes: Array.isArray(row?.author_scopes)
-    ? row.author_scopes
-        .map((scope) => ({
-          canPublish: normalizeProjectMemberAuthorScopeCanPublish(scope?.canPublish ?? scope?.can_publish),
-          cmsAuthorId: String(scope?.cmsAuthorId ?? scope?.cms_author_id ?? "").trim(),
-        }))
-        .filter((scope) => scope.cmsAuthorId)
-    : [],
-  permissions: Array.isArray(row?.permission_keys)
-    ? row.permission_keys.map((permission) => permission.trim()).filter(Boolean)
-    : [],
-  roles: Array.isArray(row?.role_keys) ? row.role_keys.map((role) => role.trim()).filter(Boolean) : [],
-});
-
 const getAuthenticatedProjectRequestContext = cache(async () => {
   const authResult = await getAuthenticatedApiRequestContext({
     ensurePreparedProfile: false,
   });
 
+  if (!authResult.ok) {
+    const errorResult = authResult as Extract<
+      Awaited<ReturnType<typeof getAuthenticatedApiRequestContext>>,
+      { ok: false }
+    >;
+    throw new Error(errorResult.errorMessage);
+  }
+
   return {
-    supabase: authResult.supabase,
-    user: authResult.ok ? authResult.user : null,
+    user: authResult.user,
   };
 });
 
 const loadContentProjectAccessSnapshotUncached = async ({
   projectId,
   projectSlugHint,
-  supabase,
   user,
 }: {
   projectId: string;
   projectSlugHint?: string | null;
-  supabase: Awaited<ReturnType<typeof getAuthenticatedProjectRequestContext>>["supabase"];
-  user: User;
+  user: AuthenticatedApiUser;
 }): Promise<ContentProjectAccessSnapshot | null> => {
   const normalizedProjectSlugHint = projectSlugHint?.trim() || null;
-  const accessPromise = supabase.rpc("get_current_project_member_access", {
-    p_project_id: projectId,
+  const accessContext = await getConfigProjectAccessContext({
+    projectId,
+    userId: user.id,
   });
-  const projectPromise = normalizedProjectSlugHint
-    ? Promise.resolve<{ data: { slug: string } | null; error: null }>({
-        data: {
-          slug: normalizedProjectSlugHint,
-        },
-        error: null,
-      })
-    : supabase
-          .from("basebuddy_projects")
-          .select("slug")
-          .eq("id", projectId)
-          .maybeSingle();
-  const [{ data: accessData, error: accessError }, { data: project, error: projectError }] =
-    await Promise.all([accessPromise, projectPromise]);
 
-  if (accessError) {
-    if (isControlPlaneSetupError(accessError)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(
-      getProductionErrorMessage(accessError, "Could not load this project right now."),
-    );
-  }
-
-  const accessRow = (Array.isArray(accessData) ? accessData[0] : accessData) as ProjectMemberAccessRow | null;
-
-  if (!accessRow) {
+  if (!accessContext) {
     return null;
   }
 
-  if (projectError || !project?.slug) {
-    throw new Error("Could not load this project right now.");
-  }
-
   return {
-    memberAccess: normalizeProjectMemberAccess(accessRow),
+    memberAccess: accessContext.memberAccess,
     projectId,
-    projectSlug: project.slug,
+    projectSlug: normalizedProjectSlugHint ?? accessContext.project.slug,
     schemaOptions: getContentSchemaOptions(null),
     user,
   };
@@ -152,11 +97,7 @@ const getContentProjectAccessSnapshot = cache(async (
     projectSlug?: string | null;
   },
 ) => {
-  const { supabase, user } = await getAuthenticatedProjectRequestContext();
-
-  if (!user) {
-    throw new Error("Please sign in to continue.");
-  }
+  const { user } = await getAuthenticatedProjectRequestContext();
 
   return getCachedProjectRuntimeValue({
     cacheKey: getContentProjectAccessCacheKey({
@@ -168,7 +109,6 @@ const getContentProjectAccessSnapshot = cache(async (
       loadContentProjectAccessSnapshotUncached({
         projectId,
         projectSlugHint: options?.projectSlug ?? null,
-        supabase,
         user,
       }),
     projectId,
@@ -180,7 +120,7 @@ const getContentProjectAccessSnapshot = cache(async (
 const resolveContentProjectContextFromAccessSnapshot = async (
   accessSnapshot: ContentProjectAccessSnapshot,
 ): Promise<ContentProjectContext> => {
-  const installRuntime = getInstallRuntimeContext();
+  const installRuntime = await getConfigContentRuntimeContext();
 
   return {
     ...accessSnapshot,

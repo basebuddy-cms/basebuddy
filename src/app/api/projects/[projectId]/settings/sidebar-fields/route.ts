@@ -16,6 +16,7 @@ import {
   invalidateProjectRuntimeCacheGroups,
   projectRuntimeCacheGroups,
 } from "@/lib/content-runtime/server-runtime-cache";
+import { hasProjectPermission } from "@/lib/control-plane/permissions";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,7 @@ const updateProjectPostSidebarConfigSchema = z.object({
   source: z.enum(projectPostSidebarConfigSourceValues).optional(),
 });
 
-export const GET = withAuthenticatedPreparedProjectRoute(async (_request, { projectId, user }) => {
+export const GET = withAuthenticatedPreparedProjectRoute(async (_request, { memberAccess, projectId, user }) => {
   const rateLimitError = enforceRateLimit({
     bucket: "api:project-sidebar-fields:get",
     key: user.id,
@@ -38,6 +39,10 @@ export const GET = withAuthenticatedPreparedProjectRoute(async (_request, { proj
   }
 
   try {
+    if (!hasProjectPermission(memberAccess, "mapping.read")) {
+      return NextResponse.json({ error: "You do not have permission to view these sidebar fields." }, { status: 403 });
+    }
+
     const postSidebarConfig = await getProjectPostSidebarConfig(projectId);
     return NextResponse.json({ postSidebarConfig });
   } catch (error) {
@@ -51,7 +56,7 @@ export const GET = withAuthenticatedPreparedProjectRoute(async (_request, { proj
   }
 });
 
-export const PUT = withAuthenticatedPreparedProjectRoute(async (request, { projectId, user }) => {
+export const PUT = withAuthenticatedPreparedProjectRoute(async (request, { memberAccess, projectId, user }) => {
   const payloadResult = await parseJsonBody(request, updateProjectPostSidebarConfigSchema, {
     maxBytes: 64 * 1024,
   });
@@ -73,6 +78,10 @@ export const PUT = withAuthenticatedPreparedProjectRoute(async (request, { proje
   }
 
   try {
+    if (!hasProjectPermission(memberAccess, "mapping.write")) {
+      return NextResponse.json({ error: "You do not have permission to update these sidebar fields." }, { status: 403 });
+    }
+
     const payload = payloadResult.data;
     const postSidebarConfig = await saveProjectPostSidebarConfig({
       config: normalizeContentPostSidebarConfig(payload.postSidebarConfig),

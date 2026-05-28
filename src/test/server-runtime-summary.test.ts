@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(),
-}));
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: vi.fn(),
-}));
 
 import {
   applyPersistedContentWorkspaceSummaryCountDeltas,
@@ -15,70 +9,95 @@ import {
   createPendingContentWorkspaceSummary,
   getPendingContentWorkspaceSummaryCollections,
   getPersistedContentWorkspaceSummary,
+  markPersistedContentWorkspaceSummaryInexact,
   queueContentWorkspaceSummaryBackgroundRefresh,
   savePersistedContentWorkspaceSummary,
 } from "@/lib/content-runtime/server-runtime-summary";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 describe("server runtime summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("returns null when the runtime-summary read RPC is not available yet", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message:
-          "Could not find the function public.get_project_content_runtime_summary(p_project_id) in the schema cache",
-      },
-    });
+  it("returns null when an in-memory runtime summary has not been created", async () => {
+    await expect(
+      getPersistedContentWorkspaceSummary({
+        projectId: "project-missing",
+        runtimeSignature: "mapped-runtime:missing",
+      }),
+    ).resolves.toBeNull();
+  });
 
-    vi.mocked(createClient).mockResolvedValue({
-      rpc,
-    } as never);
+  it("stores, reads, updates, and marks runtime summaries in memory", async () => {
+    await savePersistedContentWorkspaceSummary({
+      projectId: "project-1",
+      runtimeSignature: "mapped-runtime:demo",
+      summary: createContentWorkspaceSummary({
+        counts: {
+          authors: 2,
+          categories: 3,
+          files: 4,
+          media: 5,
+          posts: 6,
+          tags: 7,
+        },
+        refreshedAt: "2026-03-27T00:00:00.000Z",
+      }),
+    });
 
     await expect(
       getPersistedContentWorkspaceSummary({
         projectId: "project-1",
         runtimeSignature: "mapped-runtime:demo",
       }),
-    ).resolves.toBeNull();
-  });
-
-  it("treats a missing runtime-summary save RPC as a no-op", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message:
-          "Could not find the function public.save_project_content_runtime_summary(p_project_id, p_runtime_signature, p_summary_counts, p_is_exact, p_refreshed_at) in the schema cache",
+    ).resolves.toEqual({
+      counts: {
+        authors: 2,
+        categories: 3,
+        files: 4,
+        media: 5,
+        posts: 6,
+        tags: 7,
       },
+      isDerived: false,
+      isExact: true,
+      pendingCollections: [],
+      refreshedAt: "2026-03-27T00:00:00.000Z",
     });
 
-    vi.mocked(createAdminClient).mockReturnValue({
-      rpc,
-    } as never);
-
     await expect(
-      savePersistedContentWorkspaceSummary({
+      applyPersistedContentWorkspaceSummaryCountDeltas({
+        deltas: {
+          authors: 1,
+          posts: -2,
+          tags: -99,
+        },
         projectId: "project-1",
         runtimeSignature: "mapped-runtime:demo",
-        summary: createContentWorkspaceSummary({
-          counts: {
-            authors: 2,
-            categories: 3,
-            files: 4,
-            media: 5,
-            posts: 6,
-            tags: 7,
-          },
-          refreshedAt: "2026-03-27T00:00:00.000Z",
-        }),
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      counts: {
+        authors: 3,
+        categories: 3,
+        files: 4,
+        media: 5,
+        posts: 4,
+        tags: 0,
+      },
+      isExact: true,
+    });
+
+    await expect(
+      markPersistedContentWorkspaceSummaryInexact({
+        projectId: "project-1",
+        runtimeSignature: "mapped-runtime:demo",
+      }),
+    ).resolves.toMatchObject({
+      isExact: false,
+      counts: {
+        posts: 4,
+      },
+    });
   });
 
   it("builds a pending summary without claiming exact counts", () => {
@@ -178,71 +197,5 @@ describe("server runtime summary", () => {
         runtimeSignature: "mapped-runtime:demo",
       }),
     ).toEqual([]);
-  });
-
-  it("applies write-side count deltas onto an existing persisted summary", async () => {
-    vi.mocked(createClient).mockResolvedValue({
-      rpc: vi.fn().mockResolvedValue({
-        data: {
-          is_exact: true,
-          refreshed_at: "2026-03-28T00:00:00.000Z",
-          runtime_signature: "mapped-runtime:demo",
-          summary_counts: {
-            authors: 2,
-            categories: 3,
-            files: 4,
-            media: 5,
-            posts: 6,
-            tags: 7,
-          },
-        },
-        error: null,
-      }),
-    } as never);
-
-    const adminRpc = vi.fn().mockResolvedValue({
-      data: null,
-      error: null,
-    });
-    vi.mocked(createAdminClient).mockReturnValue({
-      rpc: adminRpc,
-    } as never);
-
-    await expect(
-      applyPersistedContentWorkspaceSummaryCountDeltas({
-        deltas: {
-          authors: 1,
-          posts: -2,
-          tags: -99,
-        },
-        projectId: "project-1",
-        runtimeSignature: "mapped-runtime:demo",
-      }),
-    ).resolves.toMatchObject({
-      counts: {
-        authors: 3,
-        categories: 3,
-        files: 4,
-        media: 5,
-        posts: 4,
-        tags: 0,
-      },
-      isExact: true,
-    });
-
-    expect(adminRpc).toHaveBeenCalledWith("save_project_content_runtime_summary", {
-      p_is_exact: true,
-      p_project_id: "project-1",
-      p_refreshed_at: expect.any(String),
-      p_runtime_signature: "mapped-runtime:demo",
-      p_summary_counts: {
-        authors: 3,
-        categories: 3,
-        files: 4,
-        media: 5,
-        posts: 4,
-        tags: 0,
-      },
-    });
   });
 });

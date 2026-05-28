@@ -9,17 +9,11 @@ import {
   parseJsonBody,
 } from "@/lib/api/request-guards";
 import {
-  APP_SETUP_REQUIRED_MESSAGE,
-  isControlPlaneSetupError,
-  isUniqueViolationError,
-} from "@/lib/control-plane/server";
+  ConfigProjectSlugConflictError,
+  createConfigProject,
+} from "@/lib/basebuddy-config/projects";
 import { invalidateControlPlaneRuntimeCache } from "@/lib/control-plane/server-runtime-cache";
 import { normalizeProjectSlug } from "@/lib/control-plane/utils";
-import { ensureContentMappingDraft } from "@/lib/content-runtime/server";
-import {
-  isContentRuntimeTransientError,
-  retryContentRuntimeTransientErrors,
-} from "@/lib/content-runtime/transient-retry";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
 
 type CreateProjectPayload = {
@@ -75,7 +69,7 @@ export async function POST(request: Request) {
     return authResult.errorResponse;
   }
 
-  const { supabase, user } = authResult;
+  const { user } = authResult;
   const rateLimitError = enforceRateLimit({
     bucket: "api:projects:post",
     key: user.id,
@@ -89,58 +83,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data, error } = await supabase.rpc("create_project", {
-      p_name: projectName,
-      p_slug: projectSlug,
+    await createConfigProject({
+      name: projectName,
+      slug: projectSlug,
+      userId: user.id,
     });
-
-    if (error) {
-      if (isControlPlaneSetupError(error)) {
-        return NextResponse.json({ error: APP_SETUP_REQUIRED_MESSAGE }, { status: 500 });
-      }
-
-      if (isUniqueViolationError(error)) {
-        return NextResponse.json(
-          {
-            error: "That project address is already taken. Choose another address and try again.",
-          },
-          { status: 409 },
-        );
-      }
-
-      return NextResponse.json(
-        {
-          error: getProductionErrorMessage(error, "Could not create the project right now."),
-        },
-        { status: 500 },
-      );
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        { error: "Could not create the project right now." },
-        { status: 500 },
-      );
-    }
-
-    try {
-      await retryContentRuntimeTransientErrors(
-        () => ensureContentMappingDraft(data),
-        {
-          delayMs: (attempt) => attempt * 500,
-          maxAttempts: 3,
-        },
-      );
-    } catch (error) {
-      console.warn(
-        error instanceof Error
-          ? `Could not seed the mapping draft for project ${data}: ${getProductionErrorMessage(
-              error,
-              "Mapping setup will be created when the project is opened.",
-            )}`
-          : `Could not seed the mapping draft for project ${data}.`,
-      );
-    }
 
     invalidateControlPlaneRuntimeCache({
       groups: ["project-bootstrap", "projects-list"],
@@ -153,6 +100,15 @@ export async function POST(request: Request) {
       redirectTo: `/projects/${projectSlug}`,
     });
   } catch (error) {
+    if (error instanceof ConfigProjectSlugConflictError) {
+      return NextResponse.json(
+        {
+          error: "That project address is already taken. Choose another address and try again.",
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       {
         error: getProductionErrorMessage(error, "Could not create the project right now."),

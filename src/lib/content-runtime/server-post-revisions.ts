@@ -2,22 +2,21 @@ import "server-only";
 
 import crypto from "node:crypto";
 
-import type { User } from "@supabase/supabase-js";
 import type { Client } from "pg";
 
 import type { ProjectMemberAccess } from "@/lib/control-plane/permissions";
+import type { AuthenticatedApiUser } from "@/lib/control-plane/server";
 
 import {
   buildGeneratedContentInsertPostRevisionQuery,
   buildGeneratedContentNextPostRevisionNumberQuery,
 } from "./adapter/generated-query-builders";
 import {
-  getContentSchemaOptions,
   supportsContentFormatAwareSchema,
   type ContentPost,
   type ContentPostRevision,
 } from "./shared";
-import { ensureGeneratedContentFeaturedImageColumns, getGeneratedContentTables } from "./server-project-schema-support";
+import { getGeneratedContentTables } from "./server-project-schema-support";
 
 type ContentDatabaseClient = Pick<Client, "query">;
 
@@ -28,7 +27,7 @@ type ContentPostRevisionContext = {
   schemaOptions: {
     enableRevisions: boolean;
   };
-  user: User;
+  user: AuthenticatedApiUser;
 };
 
 type RevisionDependencies = {
@@ -49,14 +48,9 @@ export const insertPostRevision = async ({
   post: ContentPost;
   projectSlug: string;
   schemaVersion: number | null | undefined;
-  user: User;
+  user: AuthenticatedApiUser;
 }) => {
   const tables = getGeneratedContentTables(projectSlug);
-  await ensureGeneratedContentFeaturedImageColumns({
-    client,
-    enableRevisions: getContentSchemaOptions(schemaVersion).enableRevisions,
-    projectSlug,
-  });
   const supportsFormatAwareSchema = supportsContentFormatAwareSchema(schemaVersion);
   const nextRevisionResult = await client.query<{ next_revision: number }>(
     buildGeneratedContentNextPostRevisionNumberQuery({

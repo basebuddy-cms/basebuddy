@@ -3,12 +3,9 @@ import { z } from "zod";
 
 import { enforceRateLimit, parseJsonBody } from "@/lib/api/request-guards";
 import {
-  getAuthEndpointSetupSection,
-  getControlPlaneSchemaSetupSection,
-  getDatabaseConnectionSetupSections,
-  getInstallSetupStatus,
-  isInstallSetupReady,
-} from "@/lib/self-host/install-runtime";
+  getBaseBuddyConfigSetupStatus,
+  isBaseBuddyConfigSetupReady,
+} from "@/lib/basebuddy-config/setup";
 
 const setupCheckPayloadSchema = z.object({}).strict();
 
@@ -35,27 +32,10 @@ export const POST = async (request: Request) => {
     return payloadResult.errorResponse;
   }
 
-  const [
-    controlPlaneSchemaSection,
-    authEndpointSection,
-    databaseConnectionSections,
-  ] = await Promise.all([
-    getControlPlaneSchemaSetupSection(),
-    getAuthEndpointSetupSection(),
-    getDatabaseConnectionSetupSections(),
-  ]);
-  const status = getInstallSetupStatus({
-    additionalSections: [
-      authEndpointSection,
-      ...databaseConnectionSections,
-    ],
-    controlPlaneSchemaSection,
+  const status = await getBaseBuddyConfigSetupStatus({
+    checkContentDatabase: true,
   });
-  const ready = isInstallSetupReady(status);
-
-  if (ready) {
-    return NextResponse.json({ ready: true });
-  }
+  const ready = isBaseBuddyConfigSetupReady(status);
 
   return NextResponse.json({
     ready,

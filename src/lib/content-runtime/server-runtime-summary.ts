@@ -1,10 +1,5 @@
 import "server-only";
 
-import {
-  createControlPlaneAdminClient,
-  createControlPlaneServerClient,
-} from "@/lib/control-plane/supabase-clients";
-
 import { contentCollections, type ContentCollection, type ContentCollectionCounts, type ContentWorkspaceSummary } from "./shared";
 import { createEmptyContentCounts } from "./server-support";
 
@@ -20,20 +15,7 @@ export const CONTENT_WORKSPACE_SUMMARY_STALE_MS = 30_000;
 
 const pendingWorkspaceSummaryRefreshCollections = new Map<string, Set<ContentCollection>>();
 const pendingWorkspaceSummaryRefreshes = new Map<string, Promise<void>>();
-
-const isMissingRuntimeSummaryRpc = (error: { code?: string; message?: string } | null | undefined) =>
-  error?.code === "PGRST202" && /project_content_runtime_summary/i.test(error.message ?? "");
-
-const normalizeWorkspaceSummaryCounts = (
-  counts: Partial<Record<ContentCollection, number | string | null | undefined>> | null | undefined,
-): ContentCollectionCounts => ({
-  authors: Number(counts?.authors ?? 0),
-  categories: Number(counts?.categories ?? 0),
-  files: Number(counts?.files ?? 0),
-  media: Number(counts?.media ?? 0),
-  posts: Number(counts?.posts ?? 0),
-  tags: Number(counts?.tags ?? 0),
-});
+const persistedWorkspaceSummaries = new Map<string, ContentWorkspaceSummary>();
 
 const getWorkspaceSummaryRefreshKey = ({
   projectId,
@@ -42,6 +24,17 @@ const getWorkspaceSummaryRefreshKey = ({
   projectId: string;
   runtimeSignature: string;
 }) => `${projectId}:${runtimeSignature}`;
+
+const cloneContentWorkspaceSummary = (summary: ContentWorkspaceSummary): ContentWorkspaceSummary =>
+  createContentWorkspaceSummary({
+    counts: {
+      ...summary.counts,
+    },
+    isDerived: summary.isDerived,
+    isExact: summary.isExact,
+    pendingCollections: summary.pendingCollections,
+    refreshedAt: summary.refreshedAt,
+  });
 
 const getPendingWorkspaceSummaryRefreshCollectionSet = (key: string) => {
   const existingCollections = pendingWorkspaceSummaryRefreshCollections.get(key);
@@ -174,38 +167,11 @@ export const getPersistedContentWorkspaceSummary = async ({
   projectId: string;
   runtimeSignature: string;
 }): Promise<ContentWorkspaceSummary | null> => {
-  const supabase = await createControlPlaneServerClient();
-  const { data, error } = await supabase.rpc("get_project_content_runtime_summary", {
-    p_project_id: projectId,
-  });
+  const persistedSummary = persistedWorkspaceSummaries.get(
+    getWorkspaceSummaryRefreshKey({ projectId, runtimeSignature }),
+  );
 
-  if (isMissingRuntimeSummaryRpc(error)) {
-    return null;
-  }
-
-  if (error) {
-    throw error;
-  }
-
-  const row = (Array.isArray(data) ? data[0] : data) as
-    | {
-        is_exact?: boolean | null;
-        refreshed_at?: string | null;
-        runtime_signature?: string | null;
-        summary_counts?: Partial<Record<ContentCollection, number | string | null | undefined>> | null;
-      }
-    | null
-    | undefined;
-
-  if (!row || row.runtime_signature !== runtimeSignature) {
-    return null;
-  }
-
-  return createContentWorkspaceSummary({
-    counts: normalizeWorkspaceSummaryCounts(row.summary_counts),
-    isExact: row.is_exact !== false,
-    refreshedAt: row.refreshed_at ?? null,
-  });
+  return persistedSummary ? cloneContentWorkspaceSummary(persistedSummary) : null;
 };
 
 export const savePersistedContentWorkspaceSummary = async ({
@@ -217,22 +183,18 @@ export const savePersistedContentWorkspaceSummary = async ({
   runtimeSignature: string;
   summary: ContentWorkspaceSummary;
 }) => {
-  const supabase = createControlPlaneAdminClient();
-  const { error } = await supabase.rpc("save_project_content_runtime_summary", {
-    p_is_exact: summary.isExact,
-    p_project_id: projectId,
-    p_refreshed_at: summary.refreshedAt ?? new Date().toISOString(),
-    p_runtime_signature: runtimeSignature,
-    p_summary_counts: summary.counts,
-  });
-
-  if (isMissingRuntimeSummaryRpc(error)) {
-    return;
-  }
-
-  if (error) {
-    throw error;
-  }
+  persistedWorkspaceSummaries.set(
+    getWorkspaceSummaryRefreshKey({ projectId, runtimeSignature }),
+    cloneContentWorkspaceSummary(
+      createContentWorkspaceSummary({
+        counts: summary.counts,
+        isDerived: summary.isDerived,
+        isExact: summary.isExact,
+        pendingCollections: summary.pendingCollections,
+        refreshedAt: summary.refreshedAt ?? new Date().toISOString(),
+      }),
+    ),
+  );
 };
 
 export const applyPersistedContentWorkspaceSummaryCountDeltas = async ({

@@ -37,7 +37,7 @@ describe("user-facing error messages", () => {
     expect(
       getProductionErrorMessage(
         new Error(
-          "BaseBuddy still needs a required setup update before you can create or open projects. Apply the latest Supabase migrations for this app and try again.",
+          "BaseBuddy still needs a required setup update before you can create or open projects. Update basebuddy.config.json and try again.",
         ),
         "Could not load this project right now.",
       ),
@@ -46,12 +46,12 @@ describe("user-facing error messages", () => {
     expect(
       getProductionErrorMessage(
         new Error(
-          "Could not apply the BaseBuddy control-plane schema. The configured database user needs permission to create tables and install RPCs.",
+          "Could not write basebuddy.config.json. The app process needs permission to update the project root config file.",
         ),
         "Could not create the project right now.",
       ),
     ).toBe(
-      "We couldn't finish preparing this workspace. Check the setup permissions and try again.",
+      "We couldn't finish preparing this project. Check the setup permissions and try again.",
     );
 
     expect(
@@ -66,7 +66,7 @@ describe("user-facing error messages", () => {
         new Error("Could not upload directly to the configured storage. If this project uses S3-compatible storage, make sure its CORS settings allow this site."),
         "Could not upload that file right now.",
       ),
-    ).toBe("We couldn't upload this file. Check upload storage and try again.");
+    ).toBe("We couldn't upload this file. Check media storage and try again.");
   });
 
   it("does not pass through raw provider, schema, or runtime terminology", () => {
@@ -75,7 +75,7 @@ describe("user-facing error messages", () => {
         new Error("Mapped content requires Session Pooler access."),
         "Could not load this project right now.",
       ),
-    ).toBe("This project needs a content connection before you can continue.");
+    ).toBe("This project needs a working database connection before you can continue.");
 
     expect(
       getProductionErrorMessage(
@@ -89,7 +89,7 @@ describe("user-facing error messages", () => {
         new Error("Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY"),
         "Could not load this project right now.",
       ),
-    ).toBe("BaseBuddy needs a setup update. Check the app configuration and try again.");
+    ).toBe("BaseBuddy needs a setup update. Open setup and check the environment values.");
 
     expect(
       getProductionErrorMessage(
@@ -103,7 +103,7 @@ describe("user-facing error messages", () => {
         new Error("A mapped column does not exist in the connected database."),
         "Could not save the post right now.",
       ),
-    ).toBe("This project's content setup is out of date. Review the setup and try again.");
+    ).toBe("This project's mapping is out of date. Review the mapping and try again.");
 
     expect(
       getProductionErrorMessage(
@@ -117,39 +117,39 @@ describe("user-facing error messages", () => {
         new Error("AccessDenied: Could not reach the configured S3-compatible storage"),
         "Could not upload that file right now.",
       ),
-    ).toBe("We couldn't complete the storage request. Check upload storage and try again.");
+    ).toBe("We couldn't complete the storage request. Check media storage and try again.");
   });
 
   it("uses setup-owner copy when setup diagnostics need technical next steps", () => {
     expect(
       getSetupOwnerErrorMessage(
-        new Error("Missing required environment variable: BASEBUDDY_CONTROL_SUPABASE_URL"),
+        new Error("Missing root config file: basebuddy.config.json"),
         "Could not complete setup checks right now.",
       ),
-    ).toBe("Set BASEBUDDY_CONTROL_SUPABASE_URL in .env, restart the app, and run setup checks again.");
+    ).toBe("Open onboarding or run the BaseBuddy CLI setup command to create basebuddy.config.json.");
 
     expect(
       getSetupOwnerErrorMessage(
         new Error("Could not find the public.basebuddy_get_projects RPC in the schema cache."),
         "Could not complete setup checks right now.",
       ),
-    ).toBe("BaseBuddy tables are not up to date. Run the setup SQL, then run setup checks again.");
+    ).toBe("BaseBuddy needs a setup update. Open setup and run the latest checks.");
 
     expect(
       getProductionErrorMessage(
-        new Error("Missing required environment variable: BASEBUDDY_CONTROL_SUPABASE_URL"),
+        new Error("Missing root config file: basebuddy.config.json"),
         "Could not load this project right now.",
       ),
-    ).toBe("BaseBuddy needs a setup update. Check the app configuration and try again.");
+    ).toBe("BaseBuddy needs a setup update. Open setup and check the BaseBuddy config.");
   });
 
   it("preserves self-host mapping guidance", () => {
     expect(
       getProductionErrorMessage(
-        new Error("Finish content setup before the editor can load content."),
+        new Error("Finish database mapping before the editor can load content."),
         "Could not load this project right now.",
       ),
-    ).toBe("Finish content setup before the editor can load content.");
+    ).toBe("Finish database mapping before the editor can load content.");
   });
 
   it("preserves clear production-ready messages", () => {
@@ -213,10 +213,31 @@ describe("user-facing error messages", () => {
 
     expect(source).not.toMatch(/CMS schema/i);
     expect(source).not.toMatch(/control-plane schema/i);
+    expect(source).not.toMatch(/Supabase migrations/i);
     expect(source).not.toMatch(/install database/i);
     expect(source).not.toMatch(/database mapping/i);
     expect(source).not.toMatch(/configured storage/i);
     expect(source).not.toMatch(/S3-compatible/i);
+    expect(source).not.toMatch(/app configuration/i);
+    expect(source).not.toMatch(/upload storage/i);
+  });
+
+  it("keeps storage credential errors pointed at env values instead of app configuration", () => {
+    const repoRoot = process.cwd();
+    const sources = [
+      "src/lib/content-runtime/client-direct-upload.ts",
+      "src/lib/control-plane/server.ts",
+      "src/lib/content-runtime/server-files-context.ts",
+      "src/lib/content-runtime/server-media-shared.ts",
+      "src/lib/content-runtime/server-media-supabase.ts",
+      "src/lib/content-runtime/server-media-context.ts",
+      "src/lib/content-runtime/server-project-mapping.ts",
+      "src/components/editor/project-editor/posts-mapping-workspace.tsx",
+    ].map((relativePath) => readFileSync(join(repoRoot, relativePath), "utf8"));
+
+    expect(sources.join("\n")).not.toMatch(/app configuration/i);
+    expect(sources.join("\n")).not.toMatch(/upload storage/i);
+    expect(sources.join("\n")).toMatch(/environment values|env/i);
   });
 
   it("keeps editor field-state copy out of runtime implementation language", () => {

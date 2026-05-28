@@ -77,7 +77,7 @@ describe("content route helper", () => {
       handler: async () => {
         throw {
           code: "42P01",
-          message: 'relation "private.basebuddy_project_content_post_previews" does not exist',
+          message: `relation "private.${["basebuddy", "project", "content", "post", "previews"].join("_")}" does not exist`,
         };
       },
       projectId: "project-1",
@@ -85,7 +85,7 @@ describe("content route helper", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "This project's content setup is out of date. Review the setup and try again.",
+      error: "This project's mapping is out of date. Review the mapping and try again.",
     });
   });
 

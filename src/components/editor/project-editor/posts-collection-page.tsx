@@ -250,45 +250,46 @@ export function ProjectEditorPostsCollectionPage({
 
       {posts.length ? (
         <>
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-10 w-10 px-0">
-                  <Checkbox
-                    aria-label="Select all posts"
-                    checked={
-                      selectablePosts.length
-                        ? allSelected
-                          ? true
-                          : partiallySelected
-                            ? "indeterminate"
-                            : false
-                        : false
-                    }
-                    onCheckedChange={(checked) => onToggleAllSelection(checked === true)}
-                    disabled={!selectablePosts.length}
-                  />
-                </TableHead>
-                <TableHead className="h-10 w-[38%] px-0 text-sm uppercase tracking-wider">Title</TableHead>
-                {showStatusControls ? (
-                  <TableHead className="h-10 w-[128px] px-0 text-sm uppercase tracking-wider">Status</TableHead>
-                ) : null}
-                {showAuthorColumn ? (
-                  <TableHead className="h-10 w-[180px] px-0 text-sm uppercase tracking-wider">Author</TableHead>
-                ) : null}
-                {showSlugColumn ? (
-                  <TableHead className="h-10 w-[180px] px-0 text-sm uppercase tracking-wider">Slug</TableHead>
-                ) : null}
-                <TableHead className="h-10 w-[180px] px-0 text-right text-sm uppercase tracking-wider">
-                  Updated
-                </TableHead>
-                <TableHead className="h-10 w-[88px] px-0 text-right text-sm uppercase tracking-wider">
-                  Action
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {posts.map((post) => {
+          <div className="-mx-1 overflow-x-auto px-1">
+            <Table className="min-w-[920px] table-fixed">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="h-10 w-10 px-0">
+                    <Checkbox
+                      aria-label="Select all posts"
+                      checked={
+                        selectablePosts.length
+                          ? allSelected
+                            ? true
+                            : partiallySelected
+                              ? "indeterminate"
+                              : false
+                          : false
+                      }
+                      onCheckedChange={(checked) => onToggleAllSelection(checked === true)}
+                      disabled={!selectablePosts.length}
+                    />
+                  </TableHead>
+                  <TableHead className="h-10 w-[38%] px-0 text-sm uppercase tracking-wider">Title</TableHead>
+                  {showStatusControls ? (
+                    <TableHead className="h-10 w-[128px] px-0 text-sm uppercase tracking-wider">Status</TableHead>
+                  ) : null}
+                  {showAuthorColumn ? (
+                    <TableHead className="h-10 w-[180px] px-0 text-sm uppercase tracking-wider">Author</TableHead>
+                  ) : null}
+                  {showSlugColumn ? (
+                    <TableHead className="h-10 w-[180px] px-0 text-sm uppercase tracking-wider">Slug</TableHead>
+                  ) : null}
+                  <TableHead className="h-10 w-[180px] px-0 text-right text-sm uppercase tracking-wider">
+                    Updated
+                  </TableHead>
+                  <TableHead className="h-10 w-[88px] px-0 text-right text-sm uppercase tracking-wider">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {posts.map((post) => {
                 const author = post.authorId ? authorsById.get(post.authorId) : null;
                 const authorDisplayName = author?.displayName ?? "No author";
                 const authorEmail = author?.email ?? null;
@@ -395,6 +396,7 @@ export function ProjectEditorPostsCollectionPage({
               })}
             </TableBody>
           </Table>
+          </div>
 
           {pagination}
         </>

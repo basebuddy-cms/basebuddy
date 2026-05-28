@@ -182,7 +182,7 @@ describe("getMappedContentPostAuthorId", () => {
     expect(getMappedRelationValuesForPostsMock).toHaveBeenCalledTimes(2);
   });
 
-  it("prefers the mapped content projection author id when available", async () => {
+  it("prefers the mapped projection author id when available", async () => {
     const client = {
       query: vi.fn(),
     };

@@ -14,12 +14,13 @@ const {
   getContentRuntimeRequestServerTimingHeader,
   getContentWorkspaceMeta,
   getContentProjectContext,
+  getBaseBuddyConfigSetupStatus,
   logSlowContentRuntimeRequest,
   measureContentRuntimeRequestSpan,
   pushContentRuntimeRequestSpan,
   runWithContentRuntimeRequestMetrics,
   setContentRuntimeRequestMetric,
-  validateInstallRuntimeConfiguration,
+  isBaseBuddyConfigSetupReady,
 } = vi.hoisted(() => ({
   getContentAuthorsPage: vi.fn(),
   getContentCategoriesPage: vi.fn(),
@@ -32,21 +33,22 @@ const {
   getContentRuntimeRequestServerTimingHeader: vi.fn(),
   getContentWorkspaceMeta: vi.fn(),
   getContentProjectContext: vi.fn(),
+  getBaseBuddyConfigSetupStatus: vi.fn(),
   logSlowContentRuntimeRequest: vi.fn(),
   measureContentRuntimeRequestSpan: vi.fn(async (_name: string, work: () => Promise<unknown>) => work()),
   pushContentRuntimeRequestSpan: vi.fn(),
   runWithContentRuntimeRequestMetrics: vi.fn(async ({ work }: { work: () => Promise<Response> }) => work()),
   setContentRuntimeRequestMetric: vi.fn(),
-  validateInstallRuntimeConfiguration: vi.fn(),
+  isBaseBuddyConfigSetupReady: vi.fn(),
 }));
 
 vi.mock("@/lib/control-plane/server", () => ({
-  APP_SETUP_REQUIRED_MESSAGE: "BaseBuddy setup is incomplete.",
   getAuthenticatedApiRequestContext,
 }));
 
-vi.mock("@/lib/self-host/install-runtime", () => ({
-  validateInstallRuntimeConfiguration,
+vi.mock("@/lib/basebuddy-config/setup", () => ({
+  getBaseBuddyConfigSetupStatus,
+  isBaseBuddyConfigSetupReady,
 }));
 
 vi.mock("@/lib/content-runtime/server", () => ({
@@ -85,12 +87,22 @@ describe("content split routes", () => {
     vi.clearAllMocks();
 
     vi.mocked(getAuthenticatedApiRequestContext).mockResolvedValue({
+      account: {
+        avatarUrl: null,
+        email: "owner@example.com",
+        name: "Owner",
+      },
       ok: true,
-      supabase: {},
       user: {
         id: "user-1",
       },
     } as never);
+    vi.mocked(getBaseBuddyConfigSetupStatus).mockResolvedValue({
+      configPath: "/repo/basebuddy.config.json",
+      sections: [],
+      topology: "config-file",
+    } as never);
+    vi.mocked(isBaseBuddyConfigSetupReady).mockReturnValue(true);
     vi.mocked(getContentProjectContext).mockResolvedValue({
     } as never);
     vi.mocked(getContentRuntimeRequestServerTimingHeader).mockReturnValue("auth;dur=1,handler;dur=2,total;dur=3");
@@ -374,7 +386,7 @@ describe("content split routes", () => {
       errorMessage: "Please sign in to continue.",
       ok: false,
       status: 401,
-      supabase: {},
+      user: null,
     } as never);
 
     const response = await getContentWorkspaceRoute(

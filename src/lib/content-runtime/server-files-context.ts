@@ -14,7 +14,7 @@ import {
 import {
   CONTENT_MEDIA_SIGNED_URL_TTL_SECONDS,
   canManageContentMedia,
-  ensureContentPlaneStorageConnection,
+  ensureContentStorageConnection,
   getMappedS3CompatibleFilesStorageConfig,
   type ContentMediaContext,
   type ContentMediaDependencies,
@@ -42,7 +42,7 @@ export const getContentFilesLibraryContext = async ({
     throw new Error("Finish files mapping before opening the files library.");
   }
 
-  ensureContentPlaneStorageConnection(context);
+  ensureContentStorageConnection(context);
 
   const bucketName = getMappedContentSupabaseFilesBucketName(readyMapping);
   const s3CompatibleFilesStorage = getMappedS3CompatibleFilesStorageConfig(readyMapping);
@@ -58,7 +58,7 @@ export const getContentFilesLibraryContext = async ({
 
     if (!serviceRoleKey && !isPublicBucket) {
       throw new Error(
-        "Could not browse this private files storage. Check upload storage and try again.",
+        "Could not browse this private files storage. Check media storage and try again.",
       );
     }
 
@@ -85,7 +85,7 @@ export const getContentFilesLibraryContext = async ({
 
     if (!credentials) {
       throw new Error(
-        "Could not browse files storage. Add files upload storage credentials in app configuration and try again.",
+        "Could not browse files storage. Add files storage credentials in environment values and try again.",
       );
     }
 

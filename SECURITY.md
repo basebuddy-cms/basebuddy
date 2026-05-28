@@ -29,7 +29,7 @@ Include enough detail to reproduce the issue:
 
 - affected BaseBuddy version or commit;
 - deployment shape if relevant;
-- install topology: same-project or split-project;
+- deployment target and whether the app has a writable filesystem for `basebuddy.config.json`;
 - affected route, feature, or API;
 - steps to reproduce;
 - expected impact;

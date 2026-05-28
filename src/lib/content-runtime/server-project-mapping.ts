@@ -2,13 +2,8 @@ import "server-only";
 
 import type { Client } from "pg";
 
-import { getProductionErrorMessage } from "@/lib/errors/user-facing";
-import {
-  APP_SETUP_REQUIRED_MESSAGE,
-  isControlPlaneSetupError,
-} from "@/lib/control-plane/server";
 import type { ProjectPermissionKey } from "@/lib/control-plane/permissions";
-import { createControlPlaneServerClient } from "@/lib/control-plane/supabase-clients";
+import { saveConfigProjectContentMappingRevision } from "@/lib/basebuddy-config/projects";
 
 import {
   buildContentAutoMappingResult,
@@ -397,7 +392,7 @@ export const getContentProjectMappingDetection = async ({
   );
 
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 
   return dependencies.withContentDatabaseClient(context.connectionString, async (client) => {
@@ -450,7 +445,7 @@ export const getContentProjectMappingTables = async ({
   );
 
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 
   return dependencies.withContentDatabaseClient(context.connectionString, async (client) => {
@@ -579,7 +574,7 @@ export const saveContentMappingRevision = async ({
       )
     ) {
       throw new Error(
-        "Add a bucket name and endpoint or region for files upload storage before saving this setup.",
+        "Add a bucket name and endpoint or region for files storage before saving this mapping.",
       );
     }
 
@@ -589,7 +584,7 @@ export const saveContentMappingRevision = async ({
 
     if (!hasS3CompatibleCredentials) {
       throw new Error(
-        "Add files upload storage credentials in the app configuration before saving this setup.",
+        "Add files storage keys in environment values before saving this mapping.",
       );
     }
   }
@@ -601,7 +596,7 @@ export const saveContentMappingRevision = async ({
       )
     ) {
       throw new Error(
-        "Add a bucket name and endpoint or region for media upload storage before saving this setup.",
+        "Add a bucket name and endpoint or region for media storage before saving this mapping.",
       );
     }
 
@@ -611,27 +606,17 @@ export const saveContentMappingRevision = async ({
 
     if (!hasS3CompatibleCredentials) {
       throw new Error(
-        "Add media upload storage credentials in the app configuration before saving this setup.",
+        "Add media storage keys in environment values before saving this mapping.",
       );
     }
   }
 
-  const saveMappingParams = {
-    p_binding_status: bindingStatus ?? null,
-    p_mapping_config: normalizedMappingConfig,
-    p_project_id: projectId,
-    p_source: source,
-  };
-  const supabase = await createControlPlaneServerClient();
-  const { error } = await supabase.rpc("save_project_content_mapping_revision", saveMappingParams);
-
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProductionErrorMessage(error, "Could not save the content mapping right now."));
-  }
+  await saveConfigProjectContentMappingRevision({
+    bindingStatus,
+    mappingConfig: normalizedMappingConfig,
+    projectId,
+    source,
+  });
 
   return getContentProjectMapping({
     dependencies,

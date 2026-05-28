@@ -39,7 +39,7 @@ export const permissionCategoryLabels: Record<ProjectPermissionDefinition["categ
   member: "Members",
   content: "Content",
   author: "Authors",
-  mapping: "Content setup",
+  mapping: "Mapping",
   integration: "Integrations",
 };
 

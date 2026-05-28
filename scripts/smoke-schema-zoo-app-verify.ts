@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 
 import { Pool } from "pg";
 
+import { loadBaseBuddyConfig } from "../src/lib/basebuddy-config/store";
+
 type Project = {
   id: string;
   slug: string;
@@ -179,22 +181,21 @@ const postContentAction = async (
     method: "POST",
   });
 
-const requireProject = async (controlPool: Pool, slug: string): Promise<Project> => {
-  const result = await controlPool.query<Project>(
-    `select id, slug from public.basebuddy_projects where slug = $1`,
-    [slug],
-  );
-  const project = result.rows[0];
+const requireProject = async (slug: string): Promise<Project> => {
+  const config = await loadBaseBuddyConfig();
+  const project = config.projects.find((candidate) => candidate.slug === slug) ?? null;
 
   assert(project, `Missing smoke project ${slug}. Run scripts/smoke-schema-zoo.ts first.`);
 
-  return project;
+  return {
+    id: project.id,
+    slug: project.slug,
+  };
 };
 
 const loadContext = async (): Promise<SmokeContext> => {
   const baseUrl = process.env.PLAYWRIGHT_BASE_URL?.trim() || "http://localhost:8080";
   const contentPool = createPool(getEnv("BASEBUDDY_CONTENT_DATABASE_URL"));
-  const controlPool = createPool(getEnv("BASEBUDDY_CONTROL_DATABASE_URL"));
   const runKey = process.env.BASEBUDDY_SCHEMA_ZOO_RUN_KEY?.trim() || "20260501fix";
 
   try {
@@ -208,10 +209,10 @@ const loadContext = async (): Promise<SmokeContext> => {
 
     assert(cookie, "Test auth did not return a session cookie.");
 
-    const directProject = await requireProject(controlPool, `bb-zoo-direct-${runKey}`);
-    const jsonProject = await requireProject(controlPool, `bb-zoo-json-${runKey}`);
-    const helperProject = await requireProject(controlPool, `bb-zoo-helper-${runKey}`);
-    const readonlyProject = await requireProject(controlPool, `bb-zoo-readonly-${runKey}`);
+    const directProject = await requireProject(`bb-zoo-direct-${runKey}`);
+    const jsonProject = await requireProject(`bb-zoo-json-${runKey}`);
+    const helperProject = await requireProject(`bb-zoo-helper-${runKey}`);
+    const readonlyProject = await requireProject(`bb-zoo-readonly-${runKey}`);
 
     const directSchema = `bb_zoo_direct_${runKey}`;
     const jsonSchema = `bb_zoo_json_${runKey}`;
@@ -268,8 +269,6 @@ const loadContext = async (): Promise<SmokeContext> => {
   } catch (error) {
     await contentPool.end();
     throw error;
-  } finally {
-    await controlPool.end();
   }
 };
 

@@ -28,8 +28,11 @@ lerna-debug.log*
 .env*
 !.env.example
 !.env.playwright.example
-!.env.same-project.example
-!.env.split-project.example
+basebuddy.config.json
+basebuddy.config.*.json
+!basebuddy.config.example.json
+basebuddy.audit.jsonl
+basebuddy.audit.*.jsonl
 .vercel
 *.pem
 *.tsbuildinfo

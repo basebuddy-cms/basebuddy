@@ -1,107 +1,33 @@
 # Troubleshooting
 
-Start with:
+Start with setup diagnostics:
 
 ```sh
 pnpm setup:check
+pnpm basebuddy doctor
 ```
 
-If the app boots, also open:
+## Missing Config
 
-```text
-http://localhost:8080/onboarding?diagnostics=1
-```
-
-## Setup Page Shows Missing Env
-
-Update `.env`, then restart the app. Next.js reads env at process start.
-
-## Env Shape Is Mixed
-
-Use either same-project env names or split-project env names, not both.
-
-Same-project:
-
-```text
-BASEBUDDY_SUPABASE_*
-BASEBUDDY_DATABASE_URL
-```
-
-Split-project:
-
-```text
-BASEBUDDY_CONTROL_*
-BASEBUDDY_CONTENT_*
-```
-
-## Control-Plane Schema Fails
-
-Reapply:
+Open `/onboarding` and complete the database env screen, owner account screen, and setup checks screen. You can also run:
 
 ```sh
-psql "$BASEBUDDY_CONTROL_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20260420130000_basebuddy_self_host_baseline.sql
+pnpm basebuddy setup \
+  --owner-email owner@example.com \
+  --owner-name "Owner" \
+  --owner-password "replace-with-a-strong-password"
 ```
 
-For same-project installs, use `BASEBUDDY_DATABASE_URL`.
+Set `BASEBUDDY_AUTH_SECRET` and `BASEBUDDY_CONTENT_DATABASE_URL` in `.env` or your production environment before rerunning setup.
 
-## Local Supabase Database Connection Fails
+## Cannot Sign In
 
-Add `?sslmode=disable` to local database URLs.
+Confirm the owner user exists in `basebuddy.config.json`, the password is correct, and the app can read the config file.
 
-## Auth Redirect Fails
+## Content Does Not Load
 
-Check Supabase Auth settings:
+Check `BASEBUDDY_CONTENT_DATABASE_URL` in env. BaseBuddy must be able to connect to that database, and the saved mapping must point at real tables and columns.
 
-- Site URL is the deployed app URL.
-- Redirect URLs include `/auth/callback`.
-- Invite URLs include `/invite/*`.
-- Enabled providers match `BASEBUDDY_AUTH_PROVIDERS`.
+## Mapping Or Save Fails
 
-## Content Reads Fail
-
-Check:
-
-- content database URL;
-- network access from the app host;
-- mapped table/schema names;
-- database permissions for select/update/insert/delete as needed;
-- saved mapping status.
-
-## Field Is Read-Only Or Unsupported
-
-This usually means BaseBuddy cannot safely write the mapped shape. Check whether the field is:
-
-- generated;
-- view-derived;
-- trigger-managed;
-- missing a required relation contract;
-- an unsafe polymorphic relation;
-- an unsupported system/exotic type.
-
-## Uploads Fail
-
-Check:
-
-- file type and size;
-- batch count;
-- request body limit at your proxy/host;
-- mapped bucket name;
-- S3-compatible credential pair completeness;
-- project access permissions.
-
-## Rate Limited
-
-Wait for the `Retry-After` period. If this happens often in production, add or adjust a host-level shared rate limit.
-
-## Safe Support Information
-
-Share:
-
-- BaseBuddy commit or release;
-- topology: same-project or split-project;
-- redacted `pnpm setup:check` output;
-- route or page where the issue happens;
-- safe server log excerpt;
-- steps to reproduce.
-
-Do not share secrets, service-role keys, database passwords, session cookies, S3 secrets, certificates, or private content data.
+BaseBuddy writes dirty mapped fields only. If a field is read-only or unsupported, review the storage shape and mapping instead of changing the content schema blindly.

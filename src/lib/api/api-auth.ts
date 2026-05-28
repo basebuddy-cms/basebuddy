@@ -10,13 +10,12 @@ export const requireAuthenticatedApiUser = async (options?: {
   ensurePreparedProfile?: boolean;
   unauthenticatedMessage?: string;
 }) => {
-  const setupRequiredResponse = getSetupRequiredApiResponse();
+  const setupRequiredResponse = await getSetupRequiredApiResponse();
 
   if (setupRequiredResponse) {
     return {
       account: null,
       errorResponse: setupRequiredResponse,
-      supabase: null,
       user: null,
     };
   }
@@ -38,7 +37,6 @@ export const requireAuthenticatedApiUser = async (options?: {
         { error: errorMessage },
         { status: errorResult.status },
       ),
-      supabase: errorResult.supabase,
       user: null,
     };
   }
@@ -46,7 +44,6 @@ export const requireAuthenticatedApiUser = async (options?: {
   return {
     account: authResult.account,
     errorResponse: null,
-    supabase: authResult.supabase,
     user: authResult.user,
   };
 };

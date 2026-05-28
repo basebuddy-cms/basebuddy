@@ -4,6 +4,11 @@ import {
   DEFAULT_PROJECT_PERMISSION_DEFINITIONS,
   DEFAULT_PROJECT_ROLE_PERMISSION_KEYS,
 } from "@/lib/control-plane/member-permissions";
+import {
+  getAccessibleAuthorIdsForAction,
+  hasProjectPermission,
+  type ProjectMemberAccess,
+} from "@/lib/control-plane/permissions";
 
 describe("member permission definitions", () => {
   it("removes infrastructure/runtime connection permissions from the self-host product surface", () => {
@@ -46,5 +51,34 @@ describe("member permission definitions", () => {
     );
 
     expect("runtime" in permissionCategoryLabels).toBe(false);
+  });
+
+  it("treats invite members as a first-class TypeScript permission", () => {
+    const access: ProjectMemberAccess = {
+      authorScopes: [],
+      permissions: ["member.invite"],
+      roles: ["admin"],
+    };
+
+    expect(hasProjectPermission(access, "member.invite")).toBe(true);
+  });
+
+  it("keeps author-scoped publish access limited to scopes that can publish", () => {
+    const access: ProjectMemberAccess = {
+      authorScopes: [
+        { canPublish: false, cmsAuthorId: "author-1" },
+        { canPublish: true, cmsAuthorId: "author-2" },
+      ],
+      permissions: [
+        "content.read.authored",
+        "content.write.authored",
+        "content.publish.authored",
+      ],
+      roles: ["author"],
+    };
+
+    expect(getAccessibleAuthorIdsForAction(access, "read")).toEqual(["author-1", "author-2"]);
+    expect(getAccessibleAuthorIdsForAction(access, "write")).toEqual(["author-1", "author-2"]);
+    expect(getAccessibleAuthorIdsForAction(access, "publish")).toEqual(["author-2"]);
   });
 });

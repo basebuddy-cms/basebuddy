@@ -1,75 +1,22 @@
 # Operations
 
-This page covers recurring maintenance tasks for a self-hosted BaseBuddy install.
+Back up `basebuddy.config.json` with care because it contains app state and local account password hashes. Service keys, database URLs, and storage access keys should live in env and must be backed up through your deployment secret manager.
 
-## Setup Check
+## Before Upgrading
 
-Run:
+1. Stop background jobs if you have any.
+2. Back up `basebuddy.config.json`.
+3. Confirm deployment env values are backed up separately.
+4. Back up the content database separately.
+5. Deploy the new code.
+6. Run `pnpm setup:check` and `pnpm basebuddy doctor`.
 
-```sh
-pnpm setup:check
-```
+## After Changes
 
-Use it after env changes, deployments, migrations, and upgrades.
+Run diagnostics after deployment, config edits, password rotation, storage credential changes, and BaseBuddy upgrades.
 
-## Backups
-
-Back up the control-plane database before upgrades. The control plane stores:
-
-- projects;
-- members and roles;
-- invitations;
-- saved mappings;
-- edit sessions;
-- profile state;
-- setup readiness markers.
-
-Content-plane backup responsibility stays with the owner of the content database. BaseBuddy does not own or reshape content tables.
-
-## Upgrade Flow
-
-```mermaid
-flowchart TD
-  Pull["Pull release"] --> Install["pnpm install --frozen-lockfile"]
-  Install --> Notes["Read release notes"]
-  Notes --> Backup["Back up control plane"]
-  Backup --> Migrate["Apply new control-plane migrations if any"]
-  Migrate --> Check["pnpm setup:check"]
-  Check --> Build["pnpm build"]
-  Build --> Start["pnpm start"]
-```
+Current editable installs need a persistent writable filesystem for `basebuddy.config.json` and `basebuddy.audit.jsonl`. Immutable serverless hosts such as Vercel or Netlify are not supported for production editing unless the app root is backed by durable writable storage.
 
 ## Rollback
 
-Keep a known-good release tag or commit. If an upgrade fails:
-
-1. Stop the app.
-2. Restore the previous release.
-3. Restore the control-plane database backup if a migration changed schema in a non-backward-compatible way.
-4. Run `pnpm setup:check`.
-5. Start the app.
-
-## Logs
-
-Server logs should be captured by the host. Logs should contain enough route/request context to debug issues, but should not include secrets, full database URLs, service keys, certificates, or private content.
-
-## Health Checks
-
-At minimum, monitor:
-
-- app process uptime;
-- `/onboarding?diagnostics=1` for setup review by an authenticated owner;
-- `pnpm setup:check` during release verification;
-- database reachability;
-- Supabase Auth callback behavior.
-
-## Production Checklist
-
-- [ ] Env configured by host, not committed.
-- [ ] Control-plane migration applied.
-- [ ] Supabase Auth redirect URLs configured.
-- [ ] HTTPS and HSTS verified.
-- [ ] Reverse proxy/WAF body limits configured.
-- [ ] Shared rate limits configured for multi-instance deployments.
-- [ ] Control-plane backups enabled.
-- [ ] Rollback path documented.
+Restore the previous code and the matching `basebuddy.config.json` backup together.

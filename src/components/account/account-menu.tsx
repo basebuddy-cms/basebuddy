@@ -10,7 +10,6 @@ import { getUserInitials } from "@/lib/control-plane/utils";
 import { baseBuddyBranding } from "@/lib/branding";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -41,11 +40,12 @@ export function AccountMenu({ avatarUrl, email, name, variant = "icon" }: Accoun
     setIsSigningOut(true);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signOut();
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error("Could not log out right now.");
       }
 
       router.replace("/login");

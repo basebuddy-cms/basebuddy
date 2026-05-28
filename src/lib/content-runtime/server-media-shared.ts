@@ -158,9 +158,9 @@ export const assertPreparedContentUploads = ({
   });
 };
 
-export const ensureContentPlaneStorageConnection = (context: ContentProjectContext) => {
+export const ensureContentStorageConnection = (context: ContentProjectContext) => {
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 };
 
@@ -218,7 +218,7 @@ export const requireContentManagedStorage = (mediaContext: ContentMediaContext) 
     (mediaContext.provider === "s3_compatible" && !mediaContext.s3Storage)
   ) {
     throw new Error(
-      "This storage library is read-only right now. Add upload storage credentials to enable uploads and media management.",
+      "This storage library is read-only right now. Add media storage environment values to enable uploads and media management.",
     );
   }
 

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
-  type AuthenticatedProjectApiRouteContext,
   withAuthenticatedPreparedProjectRoute,
   withAuthenticatedProjectRoute,
 } from "@/lib/api/project-api-auth";
@@ -17,33 +16,18 @@ import type {
   ProjectAuthorsPayload,
   SetProjectAuthorAssignmentPayload,
 } from "@/lib/control-plane/authors";
-import { normalizeProjectMemberAuthorScopeCanPublish } from "@/lib/control-plane/members";
-import {
-  APP_SETUP_REQUIRED_MESSAGE,
-  isControlPlaneSetupError,
-} from "@/lib/control-plane/server";
 import {
   createContentCollectionEntry,
   deleteContentCollectionEntries,
   getContentAuthorsPage,
 } from "@/lib/content-runtime/server";
+import {
+  getConfigProjectAuthorAssignments,
+  getConfigProjectAuthorMembers,
+  removeConfigProjectAuthorScopes,
+  setConfigProjectAuthorAssignment,
+} from "@/lib/basebuddy-config/projects";
 export const runtime = "nodejs";
-
-type ProjectAuthorMembersRow = {
-  avatar_url: string | null;
-  email: string | null;
-  name: string | null;
-  user_id: string;
-};
-
-type ProjectAuthorAssignmentsRow = {
-  avatar_url: string | null;
-  can_publish: boolean | null;
-  cms_author_id: string;
-  email: string | null;
-  name: string | null;
-  user_id: string | null;
-};
 
 const parsePositiveInteger = (value: string | null, fallback: number) => {
   const parsed = Number.parseInt(value ?? "", 10);
@@ -91,13 +75,11 @@ const loadProjectAuthorsPayload = async ({
   page,
   pageSize,
   projectId,
-  supabase,
 }: {
   includeMeta?: boolean;
   page: number;
   pageSize: number;
   projectId: string;
-  supabase: AuthenticatedProjectApiRouteContext["supabase"];
 }) => {
   const authorsPage = await getContentAuthorsPage({
     page,
@@ -112,48 +94,20 @@ const loadProjectAuthorsPayload = async ({
     } satisfies ProjectAuthorsPayload;
   }
 
-  const { data: membersData, error: membersError } = await supabase.rpc("get_project_author_members", {
-    p_project_id: projectId,
-  });
-
-  if (membersError) {
-    if (isControlPlaneSetupError(membersError)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProjectAccessRouteErrorMessage(membersError, "authors"));
-  }
-
-  const { data: assignmentsData, error: assignmentsError } = await supabase.rpc("get_project_author_assignments", {
-    p_project_id: projectId,
-  });
-
-  if (assignmentsError) {
-    if (isControlPlaneSetupError(assignmentsError)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProjectAccessRouteErrorMessage(assignmentsError, "authors"));
-  }
+  const [authorMembers, assignments] = await Promise.all([
+    getConfigProjectAuthorMembers({ projectId }),
+    getConfigProjectAuthorAssignments({ projectId }),
+  ]);
 
   return {
-    assignments: ((assignmentsData ?? []) as ProjectAuthorAssignmentsRow[]).map((assignment) => ({
-      canPublish: normalizeProjectMemberAuthorScopeCanPublish(assignment.can_publish),
-      cmsAuthorId: assignment.cms_author_id,
-      userId: assignment.user_id,
-    })),
-    authorMembers: ((membersData ?? []) as ProjectAuthorMembersRow[]).map((member) => ({
-      avatarUrl: member.avatar_url,
-      email: member.email,
-      name: member.name,
-      userId: member.user_id,
-    })),
+    assignments,
+    authorMembers,
     authors: authorsPage.items,
     pagination: authorsPage.pagination,
   } satisfies ProjectAuthorsPayload;
 };
 
-export const GET = withAuthenticatedProjectRoute(async (request, { projectId, supabase }) => {
+export const GET = withAuthenticatedProjectRoute(async (request, { projectId }) => {
   const { searchParams } = new URL(request.url);
   const page = parsePositiveInteger(searchParams.get("page"), 1);
   const pageSize = parsePositiveInteger(searchParams.get("pageSize"), 20);
@@ -165,7 +119,6 @@ export const GET = withAuthenticatedProjectRoute(async (request, { projectId, su
       page,
       pageSize,
       projectId,
-      supabase,
     });
 
     return NextResponse.json(payload satisfies ProjectAuthorsPayload);
@@ -175,7 +128,7 @@ export const GET = withAuthenticatedProjectRoute(async (request, { projectId, su
   }
 });
 
-export const POST = withAuthenticatedPreparedProjectRoute(async (request, { projectId, supabase, user }) => {
+export const POST = withAuthenticatedPreparedProjectRoute(async (request, { projectId, user }) => {
   const payloadResult = await parseJsonBody(request, createProjectAuthorSchema, {
     maxBytes: 24 * 1024,
   });
@@ -213,31 +166,19 @@ export const POST = withAuthenticatedPreparedProjectRoute(async (request, { proj
     });
 
     if (payload.assignUserId) {
-      const { error } = await supabase.rpc("set_project_author_assignment", {
-        p_can_publish: true,
-        p_cms_author_id: entry.id,
-        p_project_id: projectId,
-        p_user_id: payload.assignUserId,
+      await setConfigProjectAuthorAssignment({
+        actorUserId: user.id,
+        canPublish: true,
+        cmsAuthorId: entry.id,
+        projectId,
+        userId: payload.assignUserId,
       });
-
-      if (error) {
-        if (isControlPlaneSetupError(error)) {
-          return NextResponse.json({ error: APP_SETUP_REQUIRED_MESSAGE }, { status: 500 });
-        }
-
-        const message = getProjectAccessRouteErrorMessage(error, "authors");
-        return NextResponse.json(
-          { error: message },
-          { status: getProjectAccessRouteErrorStatus(message, "authors") },
-        );
-      }
     }
 
     const refreshedPayload = await loadProjectAuthorsPayload({
       page: 1,
       pageSize: 20,
       projectId,
-      supabase,
     });
 
     return NextResponse.json(refreshedPayload satisfies ProjectAuthorsPayload);
@@ -247,7 +188,7 @@ export const POST = withAuthenticatedPreparedProjectRoute(async (request, { proj
   }
 });
 
-export const PATCH = withAuthenticatedPreparedProjectRoute(async (request, { projectId, supabase, user }) => {
+export const PATCH = withAuthenticatedPreparedProjectRoute(async (request, { projectId, user }) => {
   const payloadResult = await parseJsonBody(request, setProjectAuthorAssignmentSchema, {
     maxBytes: 16 * 1024,
   });
@@ -275,24 +216,13 @@ export const PATCH = withAuthenticatedPreparedProjectRoute(async (request, { pro
   }
 
   try {
-    const { error } = await supabase.rpc("set_project_author_assignment", {
-      p_can_publish: payload.canPublish ?? true,
-      p_cms_author_id: payload.cmsAuthorId,
-      p_project_id: projectId,
-      p_user_id: payload.userId,
+    await setConfigProjectAuthorAssignment({
+      actorUserId: user.id,
+      canPublish: payload.canPublish ?? true,
+      cmsAuthorId: payload.cmsAuthorId,
+      projectId,
+      userId: payload.userId,
     });
-
-    if (error) {
-      if (isControlPlaneSetupError(error)) {
-        return NextResponse.json({ error: APP_SETUP_REQUIRED_MESSAGE }, { status: 500 });
-      }
-
-      const message = getProjectAccessRouteErrorMessage(error, "authors");
-      return NextResponse.json(
-        { error: message },
-        { status: getProjectAccessRouteErrorStatus(message, "authors") },
-      );
-    }
 
     const { searchParams } = new URL(request.url);
     const page = parsePositiveInteger(searchParams.get("page"), 1);
@@ -302,7 +232,6 @@ export const PATCH = withAuthenticatedPreparedProjectRoute(async (request, { pro
       page,
       pageSize,
       projectId,
-      supabase,
     });
 
     return NextResponse.json(refreshedPayload satisfies ProjectAuthorsPayload);
@@ -312,7 +241,7 @@ export const PATCH = withAuthenticatedPreparedProjectRoute(async (request, { pro
   }
 });
 
-export const DELETE = withAuthenticatedPreparedProjectRoute(async (request, { projectId, supabase, user }) => {
+export const DELETE = withAuthenticatedPreparedProjectRoute(async (request, { projectId, user }) => {
   const payloadResult = await parseJsonBody(request, deleteProjectAuthorsSchema, {
     maxBytes: 16 * 1024,
   });
@@ -341,22 +270,15 @@ export const DELETE = withAuthenticatedPreparedProjectRoute(async (request, { pr
       entryIds,
       projectId,
     });
-
-    const { error: cleanupError } = await supabase
-      .from("basebuddy_project_member_author_scopes")
-      .delete()
-      .eq("project_id", projectId)
-      .in("cms_author_id", entryIds);
-
-    if (cleanupError && !isControlPlaneSetupError(cleanupError)) {
-      throw new Error(getProjectAccessRouteErrorMessage(cleanupError, "authors"));
-    }
+    await removeConfigProjectAuthorScopes({
+      cmsAuthorIds: entryIds,
+      projectId,
+    });
 
     const refreshedPayload = await loadProjectAuthorsPayload({
       page: 1,
       pageSize: 20,
       projectId,
-      supabase,
     });
 
     return NextResponse.json(refreshedPayload satisfies ProjectAuthorsPayload);

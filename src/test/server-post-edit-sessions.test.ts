@@ -6,46 +6,23 @@ vi.mock("react", async () => {
 
   return {
     ...actual,
-    cache: <T extends (...args: never[]) => unknown>(fn: T) => {
-      const memoized = new Map<string, ReturnType<T>>();
-
-      return ((...args: Parameters<T>) => {
-        const key = JSON.stringify(args);
-
-        if (!memoized.has(key)) {
-          memoized.set(key, fn(...args) as ReturnType<T>);
-        }
-
-        return memoized.get(key) as ReturnType<T>;
-      }) as T;
-    },
+    cache: <T extends (...args: never[]) => unknown>(fn: T) => fn,
   };
 });
 
 const {
   canForceProjectPostTakeover,
-  createSupabaseServerClient,
   invalidateProjectRuntimeCacheGroups,
-  isControlPlaneSetupError,
 } = vi.hoisted(() => ({
   canForceProjectPostTakeover: vi.fn(() => true),
-  createSupabaseServerClient: vi.fn(),
   invalidateProjectRuntimeCacheGroups: vi.fn(),
-  isControlPlaneSetupError: vi.fn(() => false),
 }));
 
 vi.mock("@/lib/control-plane/permissions", () => ({
   canForceProjectPostTakeover,
 }));
 
-vi.mock("@/lib/control-plane/server", () => ({
-  APP_SETUP_REQUIRED_MESSAGE: "App setup required.",
-  isControlPlaneSetupError,
-}));
-
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: createSupabaseServerClient,
-}));
+vi.mock("@/lib/control-plane/server", () => ({}));
 
 vi.mock("@/lib/content-runtime/server-runtime-cache", () => ({
   invalidateProjectRuntimeCacheGroups,
@@ -54,12 +31,33 @@ vi.mock("@/lib/content-runtime/server-runtime-cache", () => ({
   },
 }));
 
-const validContext = {
+const ownerContext = {
   connectionString: "postgres://demo",
   memberAccess: {
     authorScopes: [],
     permissions: ["content.write.all"],
     roles: ["owner"],
+  },
+  user: {
+    avatarUrl: "https://example.com/owner.png",
+    email: "owner@example.com",
+    id: "user-1",
+    name: "Owner",
+  },
+};
+
+const authorContext = {
+  ...ownerContext,
+  memberAccess: {
+    authorScopes: [],
+    permissions: ["content.write.authored"],
+    roles: ["author"],
+  },
+  user: {
+    avatarUrl: null,
+    email: "author@example.com",
+    id: "user-2",
+    name: "Author",
   },
 };
 
@@ -67,112 +65,154 @@ describe("server post edit sessions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    vi.useRealTimers();
   });
 
-  it("reuses a project-scoped snapshot while still mapping isCurrentUser per viewer", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: [
-        {
-          editor_email: "owner@example.com",
-          editor_name: "Owner",
-          last_heartbeat_at: "2026-03-28T00:00:00.000Z",
-          post_id: "post-1",
-          post_title: "Launch Post",
-          user_id: "user-1",
-        },
-      ],
-      error: null,
-    });
+  it("keeps post edit sessions in memory and maps current-user state per viewer", async () => {
+    const {
+      acquireContentPostEditSessionAccess,
+      getProjectPostEditSessions,
+    } = await import("@/lib/content-runtime/server-post-edit-sessions");
 
-    createSupabaseServerClient.mockResolvedValue({
-      rpc,
+    await acquireContentPostEditSessionAccess({
+      context: ownerContext,
+      postId: "post-1",
+      postTitle: "Launch Post",
+      projectId: "project-1",
+      verifyPostWriteAccess: async () => undefined,
     });
-
-    const { getProjectPostEditSessions } = await import(
-      "@/lib/content-runtime/server-post-edit-sessions"
-    );
 
     const ownerSessions = await getProjectPostEditSessions("project-1", "user-1");
     const teammateSessions = await getProjectPostEditSessions("project-1", "user-2");
 
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(ownerSessions.get("post-1")?.isCurrentUser).toBe(true);
+    expect(ownerSessions.get("post-1")).toMatchObject({
+      avatarUrl: "https://example.com/owner.png",
+      editorEmail: "owner@example.com",
+      editorName: "Owner",
+      isCurrentUser: true,
+      postId: "post-1",
+      postTitle: "Launch Post",
+      userId: "user-1",
+    });
     expect(teammateSessions.get("post-1")?.isCurrentUser).toBe(false);
   });
 
-  it("invalidates the project-scoped presence cache after successful session mutations", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: [{ acquired: true }],
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: [{ active: true }],
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: [{ active: true }],
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: null,
-        error: null,
-      });
-
-    createSupabaseServerClient.mockResolvedValue({
-      rpc,
-    });
-
+  it("enforces conflicts, force-takeover permission, heartbeat ownership, and release in memory", async () => {
     const {
       acquireContentPostEditSessionAccess,
-      assertContentPostEditSessionAccess,
       heartbeatContentPostEditSessionAccess,
       releaseContentPostEditSessionAccess,
+      getProjectPostEditSessionSnapshot,
     } = await import("@/lib/content-runtime/server-post-edit-sessions");
 
-    await acquireContentPostEditSessionAccess({
-      context: validContext,
-      postId: "post-1",
-      postTitle: "Launch Post",
-      projectId: "project-1",
-      verifyPostWriteAccess: async () => undefined,
+    await expect(
+      acquireContentPostEditSessionAccess({
+        context: ownerContext,
+        postId: "post-1",
+        postTitle: "Launch Post",
+        projectId: "project-1",
+        verifyPostWriteAccess: async () => undefined,
+      }),
+    ).resolves.toEqual({
+      acquired: true,
+      blockingSession: null,
+      takeover: false,
     });
 
-    await heartbeatContentPostEditSessionAccess({
-      context: validContext,
-      postId: "post-1",
-      postTitle: "Launch Post",
-      projectId: "project-1",
-      verifyPostWriteAccess: async () => undefined,
+    await expect(
+      acquireContentPostEditSessionAccess({
+        context: authorContext,
+        postId: "post-1",
+        postTitle: "Launch Post",
+        projectId: "project-1",
+        verifyPostWriteAccess: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      acquired: false,
+      blockingSession: expect.objectContaining({
+        editorEmail: "owner@example.com",
+        postId: "post-1",
+        userId: "user-1",
+      }),
+      takeover: false,
     });
 
-    await assertContentPostEditSessionAccess({
-      context: validContext,
-      postId: "post-1",
-      postTitle: "Launch Post",
-      projectId: "project-1",
-      verifyPostWriteAccess: async () => undefined,
+    canForceProjectPostTakeover.mockReturnValueOnce(false);
+    await expect(
+      acquireContentPostEditSessionAccess({
+        context: authorContext,
+        force: true,
+        postId: "post-1",
+        postTitle: "Launch Post",
+        projectId: "project-1",
+        verifyPostWriteAccess: async () => undefined,
+      }),
+    ).rejects.toThrow("Only owners, admins, and editors can take over");
+
+    canForceProjectPostTakeover.mockReturnValueOnce(true);
+    await expect(
+      acquireContentPostEditSessionAccess({
+        context: authorContext,
+        force: true,
+        postId: "post-1",
+        postTitle: "Launch Post",
+        projectId: "project-1",
+        verifyPostWriteAccess: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      acquired: true,
+      takeover: true,
+    });
+
+    await expect(
+      heartbeatContentPostEditSessionAccess({
+        context: ownerContext,
+        postId: "post-1",
+        postTitle: "Launch Post",
+        projectId: "project-1",
+        verifyPostWriteAccess: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      active: false,
+      blockingSession: expect.objectContaining({
+        editorEmail: "author@example.com",
+        userId: "user-2",
+      }),
     });
 
     await releaseContentPostEditSessionAccess({
+      context: authorContext,
       postId: "post-1",
       projectId: "project-1",
     });
 
-    expect(invalidateProjectRuntimeCacheGroups).toHaveBeenCalledTimes(4);
-    expect(invalidateProjectRuntimeCacheGroups).toHaveBeenNthCalledWith(1, "project-1", [
-      "posts-presence",
-    ]);
-    expect(invalidateProjectRuntimeCacheGroups).toHaveBeenNthCalledWith(2, "project-1", [
-      "posts-presence",
-    ]);
-    expect(invalidateProjectRuntimeCacheGroups).toHaveBeenNthCalledWith(3, "project-1", [
-      "posts-presence",
-    ]);
-    expect(invalidateProjectRuntimeCacheGroups).toHaveBeenNthCalledWith(4, "project-1", [
+    expect(await getProjectPostEditSessionSnapshot("project-1")).toEqual(new Map());
+    expect(invalidateProjectRuntimeCacheGroups).toHaveBeenCalledWith("project-1", [
       "posts-presence",
     ]);
   });
 
+  it("drops stale in-memory edit sessions before snapshot reads", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-28T00:00:00.000Z"));
+
+    const {
+      acquireContentPostEditSessionAccess,
+      getProjectPostEditSessionSnapshot,
+    } = await import("@/lib/content-runtime/server-post-edit-sessions");
+
+    await acquireContentPostEditSessionAccess({
+      context: ownerContext,
+      postId: "post-1",
+      postTitle: "Launch Post",
+      projectId: "project-1",
+      verifyPostWriteAccess: async () => undefined,
+    });
+
+    expect(await getProjectPostEditSessionSnapshot("project-1")).toHaveProperty("size", 1);
+
+    vi.setSystemTime(new Date("2026-05-28T00:00:21.000Z"));
+
+    expect(await getProjectPostEditSessionSnapshot("project-1")).toEqual(new Map());
+  });
 });

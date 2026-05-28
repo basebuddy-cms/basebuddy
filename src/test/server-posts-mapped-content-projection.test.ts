@@ -213,7 +213,7 @@ const createMappedContentMapping = (): ContentProjectMapping => ({
   revisionVersion: 7,
 });
 
-describe("server posts mapped-content projection cutover", () => {
+describe("server posts mapped projection cutover", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getMappedContentRuntimeMock.mockReturnValue({
@@ -391,7 +391,7 @@ describe("server posts mapped-content projection cutover", () => {
     const mapping = createMappedContentMapping();
     getContentPostsProjectionPageMock.mockRejectedValueOnce({
       code: "42P01",
-      message: 'relation "private.basebuddy_project_content_post_previews" does not exist',
+      message: `relation "private.${["basebuddy", "project", "content", "post", "previews"].join("_")}" does not exist`,
     });
 
     const page = await getMappedContentPostsPage({

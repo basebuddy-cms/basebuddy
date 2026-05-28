@@ -4,7 +4,7 @@ import { signInAsRole } from "./support/auth";
 
 test.describe("authenticated settings flows", () => {
   test("owner can review project permissions for the self-host project", async ({ page }) => {
-    const { baseUrl, projectSlug } = await signInAsRole(page, "owner");
+    const { baseUrl, projectSlug, seedState } = await signInAsRole(page, "owner");
 
     await page.goto(`${baseUrl}/projects/${projectSlug}/settings?tab=permissions`);
 
@@ -12,26 +12,26 @@ test.describe("authenticated settings flows", () => {
     await expect(page.getByRole("heading", { level: 2, name: "Settings" })).toBeVisible();
     await expect(
       page.getByRole("main").getByText(
-        "Manage workspace details, members, invitations, permissions, content setup, and editor sidebar behavior.",
+        "Manage workspace details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
       ).first(),
     ).toBeVisible();
-    await expect(page.getByText("pw-owner@basebuddy.test")).toBeVisible();
-    await expect(page.getByText("pw-admin@basebuddy.test")).toBeVisible();
-    await expect(page.getByText("pw-editor@basebuddy.test")).toBeVisible();
-    await expect(page.getByText("pw-author@basebuddy.test")).toBeVisible();
-    await expect(page.getByText("pw-viewer@basebuddy.test")).toBeVisible();
+    await expect(page.getByText(seedState.users.owner.email)).toBeVisible();
+    await expect(page.getByText(seedState.users.admin.email)).toBeVisible();
+    await expect(page.getByText(seedState.users.editor.email)).toBeVisible();
+    await expect(page.getByText(seedState.users.author.email)).toBeVisible();
+    await expect(page.getByText(seedState.users.viewer.email)).toBeVisible();
   });
 
   test("admin can review project members for the self-host project", async ({ page }) => {
-    const { baseUrl, projectSlug } = await signInAsRole(page, "admin");
+    const { baseUrl, projectSlug, seedState } = await signInAsRole(page, "admin");
 
     await page.goto(`${baseUrl}/projects/${projectSlug}/settings?tab=members`);
 
     await expect(page).toHaveURL(/\/settings\?tab=members$/);
     await expect(page.getByText("Loading members...")).toHaveCount(0, { timeout: 15000 });
     await expect(page.getByRole("heading", { name: "Current members" })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("pw-owner@basebuddy.test")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("pw-viewer@basebuddy.test")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(seedState.users.owner.email)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(seedState.users.viewer.email)).toBeVisible({ timeout: 15000 });
   });
 
   test("owner can create and revoke a project member invite", async ({ page }) => {
@@ -63,7 +63,7 @@ test.describe("authenticated settings flows", () => {
     await expect(page).toHaveURL(/\/settings\?tab=general$/);
     await expect(
       page.getByRole("main").getByText(
-        "Manage workspace details, members, invitations, permissions, content setup, and editor sidebar behavior.",
+        "Manage workspace details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
       ).first(),
     ).toBeVisible();
     await expect(page.getByText("Only project owners and admins can update these settings.")).toBeVisible();
@@ -80,12 +80,14 @@ test.describe("authenticated settings flows", () => {
 
     await expect(page).toHaveURL(/\/settings\?tab=mapping$/);
     await expect(page.getByRole("main").getByText("Content Mapping").first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole("button", { name: "Open Posts setup" })).toBeVisible({
+    await expect(page.getByRole("button", { name: "Open Posts mapping" })).toBeVisible({
       timeout: 15000,
     });
-    await page.getByRole("button", { name: "Open Posts setup" }).click();
+    await page.getByRole("button", { name: "Open Posts mapping" }).click();
     const mappingDialog = page.getByRole("dialog", { name: "Connect BaseBuddy to your content" });
-    await expect(mappingDialog.getByText("BaseBuddy Mapping")).toBeVisible({ timeout: 15000 });
+    await expect(mappingDialog.getByRole("heading", { name: "Connect BaseBuddy to your content" })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(mappingDialog.getByRole("heading", { name: "Choose Posts Source" })).toBeVisible({ timeout: 45_000 });
   });
 });

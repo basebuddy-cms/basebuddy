@@ -1,20 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { getSafeNextPath } from "@/lib/supabase/auth";
-import { exchangeServerAuthCode } from "@/lib/supabase/server-auth";
+import { getSafeNextPath } from "@/lib/auth/redirects";
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const code = requestUrl.searchParams.get("code");
   const nextPath = getSafeNextPath(requestUrl.searchParams.get("next"));
+  const redirectUrl = new URL("/login", requestUrl.origin);
 
-  if (code) {
-    const result = await exchangeServerAuthCode(code);
+  redirectUrl.searchParams.set("next", nextPath);
+  redirectUrl.searchParams.set("error", "auth_callback_error");
 
-    if (result.ok) {
-      return NextResponse.redirect(new URL(nextPath, requestUrl.origin));
-    }
-  }
-
-  return NextResponse.redirect(new URL("/login?error=auth_callback_error", requestUrl.origin));
+  return NextResponse.redirect(redirectUrl);
 }

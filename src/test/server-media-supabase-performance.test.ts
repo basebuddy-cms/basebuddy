@@ -7,7 +7,7 @@ import {
   getContentMediaObjects,
 } from "@/lib/content-runtime/server-media-supabase";
 
-describe("content Supabase storage performance", () => {
+describe("Supabase storage performance", () => {
   it("lists storage objects with path, search, and limit predicates", async () => {
     const query = vi.fn().mockResolvedValue({
       rows: [

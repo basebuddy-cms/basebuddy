@@ -70,6 +70,28 @@ const readSeedPostRow = async (client: PgClient) => {
   return result.rows[0] ?? null;
 };
 
+const waitForSeedPostRow = async (
+  client: PgClient,
+  predicate: (row: Awaited<ReturnType<typeof readSeedPostRow>>) => boolean,
+  timeoutMs = 15_000,
+) => {
+  const deadline = Date.now() + timeoutMs;
+  let lastRow = await readSeedPostRow(client);
+
+  while (Date.now() < deadline) {
+    if (predicate(lastRow)) {
+      return lastRow;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250);
+    });
+    lastRow = await readSeedPostRow(client);
+  }
+
+  return lastRow;
+};
+
 const restoreSeedPostRow = async (client: PgClient) => {
   await client.query(
     `
@@ -205,30 +227,21 @@ test.describe("authenticated post flows", () => {
     await expect(page.getByRole("textbox", { name: "Post title" })).toHaveCount(0);
   });
 
-  test("owner sees mapped redirects in the seeded self-host draft editor", async ({ page }) => {
+  test("owner opens SEO sidebar fields in the seeded self-host draft editor", async ({ page }) => {
     const { baseUrl, projectSlug } = await signInAsRole(page, "owner");
 
     await page.goto(`${baseUrl}/projects/${projectSlug}/posts/${SEEDED_SELF_HOST_POST_ID}`);
 
-    await expect(
-      page.getByText(
-        "Old slugs that should keep resolving to this post. This setup only supports a slug list.",
-      ),
-    ).toBeVisible({
+    await page.getByRole("button", { name: /SEO Fields/ }).click();
+    await expect(page.getByText("Focus Keyword")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText("legacy-self-host-draft")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByText("older-self-host-draft")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByRole("textbox", { name: "Redirects" })).toBeVisible({
+    await expect(page.getByText("SEO Analysis")).toBeVisible({
       timeout: 15_000,
     });
   });
 
-  test("owner saves dirty fields and runs explicit workflow actions against the content plane", async ({
+  test("owner saves dirty fields and runs explicit workflow actions against mapped content", async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -272,7 +285,10 @@ test.describe("authenticated post flows", () => {
       });
       expect(saveResponse).toMatchObject({ ok: true, status: 200 });
 
-      const savedRow = await readSeedPostRow(client);
+      const savedRow = await waitForSeedPostRow(
+        client,
+        (row) => row?.title === savedTitle && row.slug === "self-host-assigned-draft" && row.status === "draft",
+      );
       expect(savedRow).toMatchObject({
         slug: "self-host-assigned-draft",
         status: "draft",
@@ -285,7 +301,10 @@ test.describe("authenticated post flows", () => {
       });
       expect(publishResponse).toMatchObject({ ok: true, status: 200 });
 
-      const publishedRow = await readSeedPostRow(client);
+      const publishedRow = await waitForSeedPostRow(
+        client,
+        (row) => row?.status === "published" && typeof row.published_at === "string",
+      );
       expect(publishedRow?.status).toBe("published");
       expect(publishedRow?.published_at).toEqual(expect.any(String));
 
@@ -295,7 +314,10 @@ test.describe("authenticated post flows", () => {
       });
       expect(unpublishResponse).toMatchObject({ ok: true, status: 200 });
 
-      const unpublishedRow = await readSeedPostRow(client);
+      const unpublishedRow = await waitForSeedPostRow(
+        client,
+        (row) => row?.status === "draft" && row.published_at === null,
+      );
       expect(unpublishedRow).toMatchObject({
         published_at: null,
         status: "draft",
@@ -307,7 +329,7 @@ test.describe("authenticated post flows", () => {
       });
       expect(archiveResponse).toMatchObject({ ok: true, status: 200 });
 
-      const archivedRow = await readSeedPostRow(client);
+      const archivedRow = await waitForSeedPostRow(client, (row) => row?.status === "archived");
       expect(archivedRow?.status).toBe("archived");
       await expect(readSeedPostsColumns(client)).resolves.toEqual([
         "id",
@@ -329,6 +351,13 @@ test.describe("authenticated post flows", () => {
       ]);
     } finally {
       await restoreSeedPostRow(client);
+      await waitForSeedPostRow(
+        client,
+        (row) =>
+          row?.title === SEEDED_SELF_HOST_POST_TITLE &&
+          row.status === "draft" &&
+          row.published_at === null,
+      );
       await client.end();
     }
   });

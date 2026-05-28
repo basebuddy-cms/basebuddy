@@ -5,6 +5,14 @@ import { resolve } from "node:path";
 import { Pool } from "pg";
 
 import {
+  ConfigProjectSlugConflictError,
+  createConfigProject,
+  getConfigProjectForUserBySlug,
+  saveConfigProjectContentMappingRevision,
+  updateConfigProjectMetadata,
+} from "../src/lib/basebuddy-config/projects";
+import { loadBaseBuddyConfig } from "../src/lib/basebuddy-config/store";
+import {
   createDefaultContentMappingConfig,
   normalizeContentMappingConfig,
   type ContentCustomFieldMapping,
@@ -919,107 +927,90 @@ const seedReadonlySchema = async (pool: Pool, schema: string) => {
   return postId;
 };
 
-const upsertProject = async (
-  pool: Pool,
-  {
+const findConfigUserByEmail = async (email: string) => {
+  const config = await loadBaseBuddyConfig();
+  return config.users.find((user) => user.email.toLowerCase() === email.toLowerCase()) ?? null;
+};
+
+const upsertProject = async ({
+  mappingConfig,
+  name,
+  postId,
+  schema,
+  slug,
+  userId,
+}: {
+  mappingConfig: ContentMappingConfig;
+  name: string;
+  postId: string;
+  schema: string;
+  slug: string;
+  userId: string;
+}): Promise<SeededProject> => {
+  const websiteUrl = `https://smoke.local/${schema}`;
+  const existingProject = await getConfigProjectForUserBySlug({
+    projectSlug: slug,
+    userId,
+  });
+  const project = existingProject.project
+    ? await updateConfigProjectMetadata({
+        name,
+        projectId: existingProject.project.id,
+        slug,
+        websiteUrl,
+      })
+    : await createConfigProject({
+        name,
+        slug,
+        userId,
+      }).catch(async (error) => {
+        if (!(error instanceof ConfigProjectSlugConflictError)) {
+          throw error;
+        }
+
+        const existing = await getConfigProjectForUserBySlug({
+          projectSlug: slug,
+          userId,
+        });
+
+        if (!existing.project) {
+          throw error;
+        }
+
+        return updateConfigProjectMetadata({
+          name,
+          projectId: existing.project.id,
+          slug,
+          websiteUrl,
+        });
+      });
+
+  if (!existingProject.project) {
+    await updateConfigProjectMetadata({
+      name,
+      projectId: project.id,
+      slug,
+      websiteUrl,
+    });
+  }
+
+  await saveConfigProjectContentMappingRevision({
+    bindingStatus: "ready",
     mappingConfig,
+    projectId: project.id,
+    source: "manual",
+  });
+
+  return {
+    id: project.id,
     name,
     postId,
     schema,
-    slug,
-    userId,
-  }: {
-    mappingConfig: ContentMappingConfig;
-    name: string;
-    postId: string;
-    schema: string;
-    slug: string;
-    userId: string;
-  },
-): Promise<SeededProject> => {
-  const id = randomUUID();
-
-  await pool.query("begin");
-  try {
-    await pool.query(
-      `
-        insert into public.basebuddy_projects (id, name, slug, status, website_url, created_by)
-        values ($1, $2, $3, 'active', $4, $5)
-        on conflict (slug) do update set
-          name = excluded.name,
-          status = 'active',
-          website_url = excluded.website_url
-        returning id
-      `,
-      [id, name, slug, `https://smoke.local/${schema}`, userId],
-    );
-    const resolvedProject = await pool.query<{ id: string }>(
-      `select id from public.basebuddy_projects where slug = $1`,
-      [slug],
-    );
-    const projectId = resolvedProject.rows[0]?.id ?? id;
-
-    await pool.query(
-      `
-        insert into public.basebuddy_project_members (project_id, user_id)
-        values ($1, $2)
-        on conflict do nothing
-      `,
-      [projectId, userId],
-    );
-    await pool.query(
-      `
-        insert into public.basebuddy_project_member_roles (project_id, user_id, role_key)
-        values ($1, $2, 'owner')
-        on conflict do nothing
-      `,
-      [projectId, userId],
-    );
-    const revisionVersionResult = await pool.query<{ next_version: number }>(
-      `
-        select coalesce(max(version), 0) + 1 as next_version
-        from private.basebuddy_project_content_mapping_revisions
-        where project_id = $1
-      `,
-      [projectId],
-    );
-    const nextRevisionVersion = revisionVersionResult.rows[0]?.next_version ?? 1;
-
-    await pool.query(
-      `
-        insert into private.basebuddy_project_content_mapping_revisions (
-          project_id,
-          binding_status,
-          version,
-          source,
-          canonical_schema_version,
-          scope_mode,
-          scope_config,
-          install_config,
-          mapping_config,
-          created_by
-        )
-        values ($1, 'ready', $2, 'manual', 1, 'database', '{}'::jsonb, '{}'::jsonb, $3::jsonb, $4)
-      `,
-      [projectId, nextRevisionVersion, JSON.stringify(mappingConfig), userId],
-    );
-    await pool.query("commit");
-
-    return {
-      id: projectId,
-      name,
-      postId,
-      schema,
-      slug,
-    };
-  } catch (error) {
-    await pool.query("rollback");
-    throw error;
-  }
+    slug: project.slug,
+  };
 };
 
 const main = async () => {
-  const controlDatabaseUrl = getEnv("BASEBUDDY_CONTROL_DATABASE_URL");
   const contentDatabaseUrl = getEnv("BASEBUDDY_CONTENT_DATABASE_URL");
   const smokeUserEmail =
     process.env.BASEBUDDY_SMOKE_USER_EMAIL?.trim() ||
@@ -1030,18 +1021,14 @@ const main = async () => {
     new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
 
   const contentPool = createPool(contentDatabaseUrl);
-  const controlPool = createPool(controlDatabaseUrl);
   const seeded: SeededProject[] = [];
 
   try {
-    const userResult = await controlPool.query<{ id: string }>(
-      `select id from public.basebuddy_profiles where lower(email) = lower($1) limit 1`,
-      [smokeUserEmail],
-    );
-    const userId = userResult.rows[0]?.id;
+    const user = await findConfigUserByEmail(smokeUserEmail);
+    const userId = user?.id;
 
     if (!userId) {
-      throw new Error(`No BaseBuddy profile found for ${smokeUserEmail}`);
+      throw new Error(`No BaseBuddy config user found for ${smokeUserEmail}`);
     }
 
     const directSchema = `bb_zoo_direct_${runKey}`;
@@ -1055,7 +1042,7 @@ const main = async () => {
     const readonlyPostId = await seedReadonlySchema(contentPool, readonlySchema);
 
     seeded.push(
-      await upsertProject(controlPool, {
+      await upsertProject({
         mappingConfig: buildDirectMapping(directSchema),
         name: `Schema Zoo Direct ${runKey}`,
         postId: directPostId,
@@ -1063,7 +1050,7 @@ const main = async () => {
         slug: `bb-zoo-direct-${runKey}`,
         userId,
       }),
-      await upsertProject(controlPool, {
+      await upsertProject({
         mappingConfig: buildJsonArrayMapping(jsonSchema),
         name: `Schema Zoo JSON ${runKey}`,
         postId: jsonPostId,
@@ -1071,7 +1058,7 @@ const main = async () => {
         slug: `bb-zoo-json-${runKey}`,
         userId,
       }),
-      await upsertProject(controlPool, {
+      await upsertProject({
         mappingConfig: buildHelperMapping(helperSchema),
         name: `Schema Zoo Helper ${runKey}`,
         postId: helperPostId,
@@ -1079,7 +1066,7 @@ const main = async () => {
         slug: `bb-zoo-helper-${runKey}`,
         userId,
       }),
-      await upsertProject(controlPool, {
+      await upsertProject({
         mappingConfig: buildReadonlyMapping(readonlySchema),
         name: `Schema Zoo Readonly ${runKey}`,
         postId: readonlyPostId,
@@ -1090,7 +1077,6 @@ const main = async () => {
     );
   } finally {
     await contentPool.end();
-    await controlPool.end();
   }
 
   console.log(JSON.stringify({ projects: seeded }, null, 2));

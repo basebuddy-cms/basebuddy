@@ -6,8 +6,8 @@ This page gets BaseBuddy running locally and points you to the first setup scree
 
 - Node.js 22 recommended.
 - `pnpm@10.32.1`.
-- A Supabase/Postgres project for BaseBuddy setup data.
-- A Postgres/Supabase schema that contains content you want to edit.
+- A Postgres/Supabase database that contains content you want to edit.
+- A writable app working directory for `basebuddy.config.json`.
 
 ## Install
 
@@ -20,22 +20,30 @@ pnpm dev
 
 BaseBuddy's dev script runs Next.js on port `8080`.
 
+Add local secrets before completing setup:
+
+```sh
+cp .env.example .env
+```
+
+Then set `BASEBUDDY_AUTH_SECRET` and `BASEBUDDY_CONTENT_DATABASE_URL` in `.env`.
+
 Open:
 
 ```text
 http://localhost:8080/onboarding
 ```
 
-BaseBuddy intentionally renders `/onboarding` before `.env` exists. That lets the app guide you through setup instead of requiring you to read every env variable first.
+BaseBuddy intentionally renders `/onboarding` before `basebuddy.config.json` exists. That lets the app create setup from the UI instead of requiring manual file edits first.
 
 ## First-Run Flow
 
 1. Open `/onboarding`.
-2. Choose same-project or split-project setup.
-3. Create `.env` from the generated values.
-4. Restart the dev server so Next.js picks up the new env values.
-5. Apply the baseline SQL, configure Auth, and run the readiness check.
-6. Sign in, create a project, and map your content tables.
+2. Complete **Connect to the database** by adding the required env values.
+3. Complete **Create account on BaseBuddy**.
+4. Let **Let's check the setup now** run automatically.
+5. Sign in with the owner account.
+6. Create a project and map your content tables.
 
 ## Production Build
 

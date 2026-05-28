@@ -616,7 +616,7 @@ export const getContentWorkspaceMetaForMappedContent = async ({
       capabilities,
       counts: createEmptyContentCounts(),
       contentRuntime: createEmptyContentRuntimeSummary(),
-      message: "Finish content setup before editing this project.",
+      message: "Finish mapping before editing this project.",
       postSidebarConfig,
       primaryContentFormat: context.schemaOptions.primaryContentFormat,
       workspaceSummary: createContentWorkspaceSummary({
@@ -647,7 +647,7 @@ export const getContentWorkspaceMetaForMappedContent = async ({
   });
 
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 
   const readableAuthorIds = dependencies.ensureContentPermission(context, "read");
@@ -789,7 +789,7 @@ export const getContentWorkspaceSummaryForMappedContent = async ({
   });
 
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 
   const readableAuthorIds = dependencies.ensureContentPermission(context, "read");
@@ -1046,7 +1046,7 @@ export const getContentSnapshotForMappedContent = async ({
       authors: [],
       categories: [],
       media: [],
-      message: "Finish content setup before editing this project.",
+      message: "Finish mapping before editing this project.",
       primaryContentFormat: context.schemaOptions.primaryContentFormat,
       posts: [],
       tags: [],
@@ -1055,7 +1055,7 @@ export const getContentSnapshotForMappedContent = async ({
   }
 
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 
   const readableAuthorIds = dependencies.ensureContentPermission(context, "read");

@@ -29,7 +29,7 @@ import {
   getContentProjectMappingTables,
 } from "@/lib/content-runtime/server-project-mapping";
 
-describe("content project mapping table catalog cache", () => {
+describe("database mapping table catalog cache", () => {
   it("uses a content database fingerprint instead of raw credentials for table catalog cache keys", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     const dependencies = {

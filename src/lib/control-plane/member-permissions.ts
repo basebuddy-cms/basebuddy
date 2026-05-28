@@ -121,14 +121,14 @@ export const DEFAULT_PROJECT_PERMISSION_DEFINITIONS: ProjectPermissionDefinition
   },
   {
     category: "mapping",
-    description: "View content setup for this project.",
-    label: "View content setup",
+    description: "View mapping for this project.",
+    label: "View mapping",
     permissionKey: "mapping.read",
   },
   {
     category: "mapping",
-    description: "Update content setup for this project.",
-    label: "Update content setup",
+    description: "Update mapping for this project.",
+    label: "Update mapping",
     permissionKey: "mapping.write",
   },
 ];

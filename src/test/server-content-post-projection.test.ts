@@ -1,23 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: vi.fn(),
-}));
 
 import type { ContentProjectMapping } from "@/lib/content-runtime/mapping";
 import {
+  countContentPostsProjection,
+  deleteStaleContentPostProjectionRows,
   getContentPostProjectionAuthorId,
   getContentPostsProjectionPage,
   getContentPostsProjectionKey,
   getContentPostsProjectionState,
+  listContentPostProjectionPreviews,
   mapContentProjectedPostPreview,
   saveContentPostsProjectionState,
   upsertContentPostProjectionRows,
 } from "@/lib/content-runtime/server-content-post-projection";
-import { createAdminClient } from "@/lib/supabase/admin";
 
-const createMappedContentMapping = (): ContentProjectMapping => ({
+const createMappedContentMapping = (revisionVersion = 7): ContentProjectMapping => ({
   bindingId: "binding-1",
   bindingMode: "mapped_content",
   bindingStatus: "ready",
@@ -35,188 +34,147 @@ const createMappedContentMapping = (): ContentProjectMapping => ({
     version: 1,
   },
   revisionId: "revision-1",
-  revisionVersion: 7,
+  revisionVersion,
 });
+
+const createProjectionRows = (count: number, refreshedAt = "2026-03-28T13:00:00.000Z") =>
+  Array.from({ length: count }, (_, index) => {
+    const oneBasedIndex = index + 1;
+    return {
+      authorId: oneBasedIndex % 2 === 0 ? "author-even" : "author-odd",
+      categoryIds: oneBasedIndex % 3 === 0 ? ["category-featured"] : [],
+      createdAt: `2026-03-${String(oneBasedIndex).padStart(2, "0")}T00:00:00.000Z`,
+      excerpt: oneBasedIndex % 5 === 0 ? "Launch notes" : null,
+      projectId: "project-1",
+      publishedAt: oneBasedIndex % 2 === 0 ? `2026-04-${String(oneBasedIndex).padStart(2, "0")}T00:00:00.000Z` : null,
+      refreshedAt,
+      searchText: `post ${oneBasedIndex} ${oneBasedIndex % 5 === 0 ? "launch" : "draft"}`,
+      slug: `post-${oneBasedIndex}`,
+      sourcePostId: `post-${String(oneBasedIndex).padStart(3, "0")}`,
+      status: oneBasedIndex % 2 === 0 ? "published" : "draft",
+      tagIds: oneBasedIndex % 4 === 0 ? ["tag-release"] : [],
+      title: `Post ${String(oneBasedIndex).padStart(3, "0")}`,
+      updatedAt: `2026-04-${String(oneBasedIndex).padStart(2, "0")}T00:00:00.000Z`,
+    } as const;
+  });
 
 describe("server mapped-content post projection storage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("loads the projection state for the current mapping revision", async () => {
-    const maybeSingle = vi.fn().mockResolvedValue({
-      data: {
-        last_error: null,
-        last_refreshed_at: "2026-03-28T13:00:00.000Z",
-        mapping_revision_key: getContentPostsProjectionKey(createMappedContentMapping()),
-        processed_items: 20,
-        progress_cursor: "post-20",
-        status: "ready",
-        total_items: 24,
-      },
-      error: null,
-    });
-    const eqRevision = vi.fn(() => ({ maybeSingle }));
-    const eqProject = vi.fn(() => ({ eq: eqRevision }));
-    const select = vi.fn(() => ({ eq: eqProject }));
-    const from = vi.fn(() => ({ select }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
+  it("stores projection state in memory for the current mapping revision", async () => {
+    const mapping = createMappedContentMapping(101);
 
     await expect(
       getContentPostsProjectionState({
-        mapping: createMappedContentMapping(),
-        projectId: "project-1",
+        mapping,
+        projectId: "project-state",
+      }),
+    ).resolves.toBeNull();
+
+    await saveContentPostsProjectionState({
+      lastError: null,
+      lastRefreshedAt: "2026-03-28T13:00:00.000Z",
+      mapping,
+      processedItems: 20,
+      progressCursor: "post-020",
+      projectId: "project-state",
+      status: "building",
+      totalItems: 24,
+    });
+
+    await expect(
+      getContentPostsProjectionState({
+        mapping,
+        projectId: "project-state",
       }),
     ).resolves.toEqual({
       lastError: null,
       lastRefreshedAt: "2026-03-28T13:00:00.000Z",
       processedItems: 20,
-      progressCursor: "post-20",
-      status: "ready",
+      progressCursor: "post-020",
+      status: "building",
       totalItems: 24,
     });
   });
 
-  it("treats missing projection storage as an unavailable optional feature", async () => {
-    const maybeSingle = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "42P01",
-        message: 'relation "private.basebuddy_project_content_post_projection_states" does not exist',
-      },
+  it("keeps projection rows in memory and supports author, taxonomy, status, and search filters", async () => {
+    const mapping = createMappedContentMapping(102);
+
+    await upsertContentPostProjectionRows({
+      mapping,
+      projectId: "project-1",
+      rows: createProjectionRows(24),
     });
-    const eqRevision = vi.fn(() => ({ maybeSingle }));
-    const eqProject = vi.fn(() => ({ eq: eqRevision }));
-    const select = vi.fn(() => ({ eq: eqProject }));
-    const from = vi.fn(() => ({ select }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
-
-    await expect(
-      getContentPostsProjectionState({
-        mapping: createMappedContentMapping(),
-        projectId: "project-1",
-      }),
-    ).resolves.toBeNull();
-
-    const upsert = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "42P01",
-        message: 'relation "private.basebuddy_project_content_post_projection_states" does not exist',
-      },
-    });
-    const writeFrom = vi.fn(() => ({ upsert }));
-    const writeSchema = vi.fn(() => ({ from: writeFrom }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema: writeSchema,
-    } as never);
-
-    await expect(
-      saveContentPostsProjectionState({
-        lastError: null,
-        lastRefreshedAt: null,
-        mapping: createMappedContentMapping(),
-        projectId: "project-1",
-        status: "stale",
-        totalItems: 0,
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("treats invalid private-schema access as unavailable projection storage", async () => {
-    const maybeSingle = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        message: "Invalid schema: private",
-      },
-    });
-    const query = {
-      eq: vi.fn(),
-      maybeSingle,
-    };
-    query.eq.mockReturnValue(query);
-    const select = vi.fn(() => query);
-    const from = vi.fn(() => ({ select }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
-
-    await expect(
-      getContentPostsProjectionState({
-        mapping: createMappedContentMapping(),
-        projectId: "project-1",
-      }),
-    ).resolves.toBeNull();
 
     await expect(
       getContentPostProjectionAuthorId({
-        mapping: createMappedContentMapping(),
-        postId: "post-1",
+        mapping,
+        postId: "post-002",
+        projectId: "project-1",
+      }),
+    ).resolves.toBe("author-even");
+
+    await expect(
+      countContentPostsProjection({
+        accessibleAuthorIds: ["author-even"],
+        mapping,
+        projectId: "project-1",
+        search: "launch",
+        status: "published",
+        tagIds: ["tag-release"],
+      }),
+    ).resolves.toBe(1);
+
+    await expect(
+      listContentPostProjectionPreviews({
+        accessibleAuthorIds: ["author-even"],
+        mapping,
+        projectId: "project-1",
+        search: "launch",
+        status: "published",
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          authorId: "author-even",
+          id: "post-020",
+          status: "published",
+          title: "Post 020",
+        }),
+      ]),
+    );
+
+    await deleteStaleContentPostProjectionRows({
+      mapping,
+      projectId: "project-1",
+      refreshedAt: "2026-03-28T13:00:00.000Z",
+      sourcePostIds: ["post-010"],
+    });
+
+    await expect(
+      getContentPostProjectionAuthorId({
+        mapping,
+        postId: "post-010",
+        projectId: "project-1",
+      }),
+    ).resolves.toBe("author-even");
+
+    await deleteStaleContentPostProjectionRows({
+      mapping,
+      projectId: "project-1",
+      refreshedAt: "2026-03-29T13:00:00.000Z",
+      sourcePostIds: ["post-010"],
+    });
+
+    await expect(
+      getContentPostProjectionAuthorId({
+        mapping,
+        postId: "post-010",
         projectId: "project-1",
       }),
     ).resolves.toBeNull();
-  });
-
-  it("upserts revision-scoped projection rows into the private schema", async () => {
-    const upsert = vi.fn().mockResolvedValue({
-      data: null,
-      error: null,
-    });
-    const from = vi.fn(() => ({ upsert }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
-
-    await upsertContentPostProjectionRows({
-      mapping: createMappedContentMapping(),
-      projectId: "project-1",
-      rows: [
-        {
-          authorId: "author-1",
-          categoryIds: ["category-1"],
-          createdAt: "2026-03-27T00:00:00.000Z",
-          excerpt: "Launch notes",
-          projectId: "project-1",
-          publishedAt: "2026-03-28T00:00:00.000Z",
-          refreshedAt: "2026-03-28T13:00:00.000Z",
-          searchText: "hello world",
-          slug: "hello-world",
-          sourcePostId: "post-1",
-          status: "published",
-          tagIds: ["tag-1"],
-          title: "Hello World",
-          updatedAt: "2026-03-28T12:00:00.000Z",
-        },
-      ],
-    });
-
-    expect(schema).toHaveBeenCalledWith("private");
-    expect(from).toHaveBeenCalledWith("basebuddy_project_content_post_previews");
-    expect(upsert).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          mapping_revision_key: getContentPostsProjectionKey(createMappedContentMapping()),
-          project_id: "project-1",
-          source_post_id: "post-1",
-        }),
-      ],
-      {
-        onConflict: "project_id,mapping_revision_key,source_post_id",
-      },
-    );
   });
 
   it("maps a stored projection row into the list-preview post shape", () => {
@@ -248,96 +206,26 @@ describe("server mapped-content post projection storage", () => {
     );
   });
 
-  it("persists ready projection state totals for the current revision", async () => {
-    const upsert = vi.fn().mockResolvedValue({
-      data: null,
-      error: null,
-    });
-    const from = vi.fn(() => ({ upsert }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
-
-    await saveContentPostsProjectionState({
-      lastError: null,
-      lastRefreshedAt: "2026-03-28T13:00:00.000Z",
-      mapping: createMappedContentMapping(),
-      projectId: "project-1",
-      processedItems: 24,
-      progressCursor: null,
-      status: "ready",
-      totalItems: 24,
+  it("uses bounded window and cursor pagination for in-memory projection pages", async () => {
+    const mapping = createMappedContentMapping(103);
+    await upsertContentPostProjectionRows({
+      mapping,
+      projectId: "project-page",
+      rows: createProjectionRows(50),
     });
 
-    expect(from).toHaveBeenCalledWith("basebuddy_project_content_post_projection_states");
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        last_error: null,
-        mapping_revision_key: getContentPostsProjectionKey(createMappedContentMapping()),
-        processed_items: 24,
-        progress_cursor: null,
-        project_id: "project-1",
-        status: "ready",
-        total_items: 24,
-      }),
-      {
-        onConflict: "project_id,mapping_revision_key",
-      },
-    );
-  });
-
-  it("uses a bounded page-plus-one read for window projection pagination", async () => {
-    const rows = Array.from({ length: 21 }, (_, index) => ({
-      author_id: null,
-      category_ids: [],
-      created_at: "2026-03-27T00:00:00.000Z",
-      excerpt: null,
-      published_at: null,
-      refreshed_at: "2026-03-28T13:00:00.000Z",
-      search_text: `post ${index}`,
-      slug: `post-${index}`,
-      source_post_id: `post-${index}`,
-      status: "draft",
-      tag_ids: [],
-      title: `Post ${index}`,
-      updated_at: "2026-03-28T12:00:00.000Z",
-    }));
-    const query = {
-      eq: vi.fn(),
-      ilike: vi.fn(),
-      order: vi.fn(),
-      range: vi.fn().mockResolvedValue({
-        data: rows,
-        error: null,
-      }),
-    };
-    query.eq.mockReturnValue(query);
-    query.ilike.mockReturnValue(query);
-    query.order.mockReturnValue(query);
-
-    const select = vi.fn(() => query);
-    const from = vi.fn(() => ({ select }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
-
-    const page = await getContentPostsProjectionPage({
-      mapping: createMappedContentMapping(),
+    const windowPage = await getContentPostsProjectionPage({
+      mapping,
       page: 2,
       pageSize: 20,
-      projectId: "project-1",
+      projectId: "project-page",
       search: "post",
       totalItems: 50_000,
       useWindowPagination: true,
     });
 
-    expect(query.range).toHaveBeenCalledWith(20, 40);
-    expect(page.posts).toHaveLength(20);
-    expect(page.pagination).toEqual(
+    expect(windowPage.posts).toHaveLength(20);
+    expect(windowPage.pagination).toEqual(
       expect.objectContaining({
         hasNextPage: true,
         hasPreviousPage: true,
@@ -347,60 +235,17 @@ describe("server mapped-content post projection storage", () => {
         totalItemsExact: false,
       }),
     );
-  });
 
-  it("does not use deep offset reads for projection-backed post pages without a cursor", async () => {
-    const rows = Array.from({ length: 21 }, (_, index) => ({
-      author_id: null,
-      category_ids: [],
-      created_at: "2026-03-27T00:00:00.000Z",
-      excerpt: null,
-      published_at: null,
-      refreshed_at: "2026-03-28T13:00:00.000Z",
-      search_text: `post ${index}`,
-      slug: `post-${index}`,
-      source_post_id: `post-${index}`,
-      status: "draft",
-      tag_ids: [],
-      title: `Post ${index}`,
-      updated_at: "2026-03-28T12:00:00.000Z",
-    }));
-    const query = {
-      eq: vi.fn(),
-      ilike: vi.fn(),
-      limit: vi.fn().mockResolvedValue({
-        data: rows,
-        error: null,
-      }),
-      order: vi.fn(),
-      range: vi.fn().mockResolvedValue({
-        data: rows,
-        error: null,
-      }),
-    };
-    query.eq.mockReturnValue(query);
-    query.ilike.mockReturnValue(query);
-    query.order.mockReturnValue(query);
-
-    const select = vi.fn(() => query);
-    const from = vi.fn(() => ({ select }));
-    const schema = vi.fn(() => ({ from }));
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      schema,
-    } as never);
-
-    const page = await getContentPostsProjectionPage({
-      mapping: createMappedContentMapping(),
+    const deepPage = await getContentPostsProjectionPage({
+      mapping,
       page: 500,
       pageSize: 20,
-      projectId: "project-1",
+      projectId: "project-page",
       totalItems: 50_000,
     });
 
-    expect(query.range).not.toHaveBeenCalled();
-    expect(query.limit).toHaveBeenCalledWith(21);
-    expect(page.pagination).toEqual(
+    expect(deepPage.posts).toHaveLength(20);
+    expect(deepPage.pagination).toEqual(
       expect.objectContaining({
         hasNextPage: true,
         nextCursor: expect.any(String),
@@ -409,111 +254,81 @@ describe("server mapped-content post projection storage", () => {
         totalItemsExact: false,
       }),
     );
+
+    const nextPage = await getContentPostsProjectionPage({
+      cursor: deepPage.pagination.nextCursor,
+      mapping,
+      pageSize: 20,
+      projectId: "project-page",
+      totalItems: 50_000,
+      useCursorPagination: true,
+    });
+
+    expect(nextPage.posts.at(0)?.id).toBe("post-030");
   });
 
   it.each([
-    ["updated_desc", "updated_at", false, "lt"],
-    ["updated_asc", "updated_at", true, "gt"],
-    ["created_desc", "created_at", false, "lt"],
-    ["created_asc", "created_at", true, "gt"],
-    ["title_desc", "title", false, "lt"],
-    ["title_asc", "title", true, "gt"],
+    ["updated_desc", "post-024", "post-019"],
+    ["updated_asc", "post-001", "post-006"],
+    ["created_desc", "post-024", "post-019"],
+    ["created_asc", "post-001", "post-006"],
+    ["title_desc", "post-024", "post-019"],
+    ["title_asc", "post-001", "post-006"],
   ] as const)(
-    "uses cursor pagination for projection-backed %s post lists",
-    async (sort, sortColumn, ascending, cursorOperator) => {
-      const rows = Array.from({ length: 21 }, (_, index) => ({
-        author_id: null,
-        category_ids: [],
-        created_at: `2026-03-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
-        excerpt: null,
-        published_at: null,
-        refreshed_at: "2026-03-28T13:00:00.000Z",
-        search_text: `post ${index}`,
-        slug: `post-${index}`,
-        source_post_id: `post-${String(index).padStart(2, "0")}`,
-        status: "draft",
-        tag_ids: [],
-        title: `Post ${String(index).padStart(2, "0")}`,
-        updated_at: `2026-04-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
-      }));
-      const query = {
-        eq: vi.fn(),
-        ilike: vi.fn(),
-        limit: vi.fn().mockResolvedValue({
-          data: rows,
-          error: null,
-        }),
-        or: vi.fn(),
-        order: vi.fn(),
-        range: vi.fn().mockResolvedValue({
-          data: rows,
-          error: null,
-        }),
-      };
-      query.eq.mockReturnValue(query);
-      query.ilike.mockReturnValue(query);
-      query.or.mockReturnValue(query);
-      query.order.mockReturnValue(query);
-
-      const select = vi.fn(() => query);
-      const from = vi.fn(() => ({ select }));
-      const schema = vi.fn(() => ({ from }));
-
-      vi.mocked(createAdminClient).mockReturnValue({
-        schema,
-      } as never);
+    "uses stable cursor ordering for projection-backed %s post lists",
+    async (sort, firstPostId, secondPageFirstPostId) => {
+      const mapping = createMappedContentMapping(104);
+      await upsertContentPostProjectionRows({
+        mapping,
+        projectId: `project-cursor-${sort}`,
+        rows: createProjectionRows(24),
+      });
 
       const firstPage = await getContentPostsProjectionPage({
-        mapping: createMappedContentMapping(),
-        pageSize: 20,
-        projectId: "project-1",
+        mapping,
+        pageSize: 5,
+        projectId: `project-cursor-${sort}`,
         sort,
-        totalItems: 50_000,
+        totalItems: 24,
         useCursorPagination: true,
       });
 
-      expect(query.range).not.toHaveBeenCalled();
-      expect(query.limit).toHaveBeenCalledWith(21);
-      expect(query.order).toHaveBeenCalledWith(sortColumn, { ascending });
-      expect(query.order).toHaveBeenCalledWith("source_post_id", { ascending: true });
-      expect(firstPage.posts).toHaveLength(20);
-      expect(firstPage.pagination).toEqual(
-        expect.objectContaining({
-          hasNextPage: true,
-          nextCursor: expect.any(String),
-          page: 1,
-          pageSize: 20,
-          totalItems: 50_000,
-          totalItemsExact: false,
-        }),
-      );
+      expect(firstPage.posts.at(0)?.id).toBe(firstPostId);
+      expect(firstPage.pagination.nextCursor).toEqual(expect.any(String));
 
-      query.limit.mockClear();
-      query.or.mockClear();
-      query.order.mockClear();
-      query.range.mockClear();
-
-      await getContentPostsProjectionPage({
+      const nextPage = await getContentPostsProjectionPage({
         cursor: firstPage.pagination.nextCursor,
-        mapping: createMappedContentMapping(),
-        pageSize: 20,
-        projectId: "project-1",
+        mapping,
+        pageSize: 5,
+        projectId: `project-cursor-${sort}`,
         sort,
-        totalItems: 50_000,
+        totalItems: 24,
         useCursorPagination: true,
       });
 
-      expect(query.or).toHaveBeenCalledWith(
-        expect.stringContaining(`${sortColumn}.${cursorOperator}.`),
-      );
-      expect(query.or).toHaveBeenCalledWith(
-        expect.stringContaining(`and(${sortColumn}.eq.`),
-      );
-      expect(query.or).toHaveBeenCalledWith(
-        expect.stringContaining("source_post_id.gt.post-19"),
-      );
-      expect(query.limit).toHaveBeenCalledWith(21);
-      expect(query.range).not.toHaveBeenCalled();
+      expect(nextPage.posts.at(0)?.id).toBe(secondPageFirstPostId);
     },
   );
+
+  it("scopes projection rows by mapping revision key", async () => {
+    const oldMapping = createMappedContentMapping(105);
+    const newMapping = createMappedContentMapping(106);
+
+    await upsertContentPostProjectionRows({
+      mapping: oldMapping,
+      projectId: "project-revision",
+      rows: createProjectionRows(1),
+    });
+
+    await expect(
+      countContentPostsProjection({
+        mapping: newMapping,
+        projectId: "project-revision",
+      }),
+    ).resolves.toBe(0);
+
+    expect(getContentPostsProjectionKey(oldMapping)).not.toBe(
+      getContentPostsProjectionKey(newMapping),
+    );
+  });
 });

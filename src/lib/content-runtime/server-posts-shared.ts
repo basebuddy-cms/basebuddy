@@ -1,6 +1,5 @@
 import "server-only";
 
-import type { User } from "@supabase/supabase-js";
 import type { Client } from "pg";
 
 import {
@@ -8,6 +7,7 @@ import {
   type ProjectContentAction,
   type ProjectMemberAccess,
 } from "@/lib/control-plane/permissions";
+import type { AuthenticatedApiUser } from "@/lib/control-plane/server";
 
 import { normalizeContentRuntimeContent } from "./content-conversion";
 import {
@@ -21,12 +21,8 @@ import {
 import type { ContentProjectMapping } from "./mapping";
 import { assertContentPostEditSessionAccess } from "./server-post-edit-sessions";
 import { createEmptyContentPagination, type ContentPaginationInput } from "./server-support";
+import { getGeneratedContentTables } from "./server-project-schema-support";
 import {
-  ensureGeneratedContentFeaturedImageColumns,
-  getGeneratedContentTables,
-} from "./server-project-schema-support";
-import {
-  getContentSchemaOptions,
   supportsContentFormatAwareSchema,
   type ContentPost,
   type ContentPostsPage,
@@ -44,7 +40,7 @@ export type ContentProjectContext = {
   projectId: string;
   projectSlug: string;
   schemaOptions: ContentSchemaOptions;
-  user: User;
+  user: AuthenticatedApiUser;
 };
 
 export type ProjectPostAuthorAssignment = {
@@ -289,11 +285,6 @@ export const getContentPostById = async ({
   schemaVersion: number | null | undefined;
 }) => {
   const tables = getGeneratedContentTables(projectSlug);
-  await ensureGeneratedContentFeaturedImageColumns({
-    client,
-    enableRevisions: getContentSchemaOptions(schemaVersion).enableRevisions,
-    projectSlug,
-  });
   const supportsFormatAwareSchema = supportsContentFormatAwareSchema(schemaVersion);
   const postResult = await client.query<{
     author_id: string | null;

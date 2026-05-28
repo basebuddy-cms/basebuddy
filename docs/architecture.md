@@ -1,74 +1,25 @@
 # Architecture
 
-BaseBuddy is a Next.js app with a storage-first content runtime.
+BaseBuddy is a self-hosted editor for existing Postgres/Supabase schemas.
 
-## Runtime Layers
+## App State
 
-```mermaid
-flowchart TB
-  UI["UI\nproject editor, mapping, settings"] --> API["API routes\nproject/auth/request guards"]
-  API --> Control["Control plane\nBaseBuddy-owned tables"]
-  API --> Runtime["Content runtime"]
-  Runtime --> Mapping["Saved mapping"]
-  Runtime --> Adapter["Postgres/Supabase adapter"]
-  Adapter --> Content["Existing content schema"]
-  Runtime --> Storage["Mapped media/files storage"]
-```
-
-## Source Layout
+BaseBuddy app state lives in:
 
 ```text
-src/
-├── app/                         # Next.js pages and API routes
-├── components/                  # editor, projects, account, and UI components
-├── hooks/                       # client hooks
-├── lib/
-│   ├── api/                     # auth, setup, request guards
-│   ├── control-plane/           # projects, members, roles, invitations
-│   ├── content-runtime/         # mapped content orchestration
-│   ├── content-runtime/adapter/ # adapter contracts and compiler
-│   ├── self-host/               # install env and setup checks
-│   ├── security/                # headers, rate limits, upload validation
-│   └── supabase/                # Supabase clients and auth helpers
-└── test/                        # Vitest suites
+process.cwd()/basebuddy.config.json
 ```
 
-## Control Plane
-
-The control plane stores BaseBuddy application state:
-
-- profiles;
-- projects;
-- project members and roles;
-- member invitations;
-- member permission overrides;
-- saved content mappings;
-- edit sessions;
-- setup readiness state.
-
-The baseline control-plane schema is installed by:
-
-```text
-supabase/migrations/20260420130000_basebuddy_self_host_baseline.sql
-```
+The config file stores users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar settings. Auth signing, content database access, and optional storage credentials come from environment variables.
 
 ## Content Runtime
 
-The content runtime reads the saved mapping, compiles it into adapter instructions, and delegates reads/writes to the Postgres/Supabase adapter.
+Content reads and writes go through the mapped runtime under `src/lib/content-runtime`. The saved mapping is the runtime truth.
 
-The mapping is the runtime source of truth. BaseBuddy does not infer a different write shape during normal editing.
+## Setup
 
-## Request Guards
+`/onboarding`, `/api/setup`, `scripts/check-self-host-setup.ts`, and `scripts/basebuddy-cli.ts` all use the same config store.
 
-API routes enforce:
+## User Schemas
 
-- authentication;
-- project access;
-- setup readiness where needed;
-- same-origin checks for cookie-backed state-changing requests;
-- JSON/body size limits;
-- process-local fixed-window rate limits.
-
-## Security Headers
-
-Security headers are produced by `src/lib/security/headers.ts` and applied through Next config and middleware.
+BaseBuddy normal setup never renames, reshapes, or migrates user content tables.

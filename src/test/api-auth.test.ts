@@ -3,27 +3,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const {
+  getBaseBuddyConfigSetupStatusMock,
   getAuthenticatedApiRequestContextMock,
-  validateInstallRuntimeConfigurationMock,
+  isBaseBuddyConfigSetupReadyMock,
 } = vi.hoisted(() => ({
+  getBaseBuddyConfigSetupStatusMock: vi.fn(),
   getAuthenticatedApiRequestContextMock: vi.fn(),
-  validateInstallRuntimeConfigurationMock: vi.fn(),
+  isBaseBuddyConfigSetupReadyMock: vi.fn(),
 }));
 
 vi.mock("@/lib/control-plane/server", () => ({
-  APP_SETUP_REQUIRED_MESSAGE: "BaseBuddy setup is incomplete.",
   getAuthenticatedApiRequestContext: getAuthenticatedApiRequestContextMock,
 }));
 
-vi.mock("@/lib/self-host/install-runtime", () => ({
-  validateInstallRuntimeConfiguration: validateInstallRuntimeConfigurationMock,
+vi.mock("@/lib/basebuddy-config/setup", () => ({
+  getBaseBuddyConfigSetupStatus: getBaseBuddyConfigSetupStatusMock,
+  isBaseBuddyConfigSetupReady: isBaseBuddyConfigSetupReadyMock,
 }));
 
 describe("non-project API auth helper", () => {
   beforeEach(() => {
     vi.resetModules();
+    getBaseBuddyConfigSetupStatusMock.mockReset();
     getAuthenticatedApiRequestContextMock.mockReset();
-    validateInstallRuntimeConfigurationMock.mockReset();
+    isBaseBuddyConfigSetupReadyMock.mockReset();
+    getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
+      configPath: "/repo/basebuddy.config.json",
+      sections: [],
+      topology: "config-file",
+    });
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(true);
   });
 
   it("passes through a successful authenticated API context", async () => {
@@ -34,9 +43,6 @@ describe("non-project API auth helper", () => {
         name: "Owner",
       },
       ok: true,
-      supabase: {
-        from: vi.fn(),
-      },
       user: {
         id: "user-1",
       },
@@ -44,16 +50,20 @@ describe("non-project API auth helper", () => {
 
     const { requireAuthenticatedApiUser } = await import("@/lib/api/api-auth");
 
-    await expect(
-      requireAuthenticatedApiUser({
-        ensurePreparedProfile: true,
-      }),
-    ).resolves.toMatchObject({
+    const result = await requireAuthenticatedApiUser({
+      ensurePreparedProfile: true,
+    });
+
+    expect(result).toMatchObject({
+      account: {
+        email: "owner@example.com",
+      },
       errorResponse: null,
       user: {
         id: "user-1",
       },
     });
+    expect(result).not.toHaveProperty("supabase");
 
     expect(getAuthenticatedApiRequestContextMock).toHaveBeenCalledWith({
       ensurePreparedProfile: true,
@@ -65,7 +75,6 @@ describe("non-project API auth helper", () => {
       errorMessage: "Please sign in to continue.",
       ok: false,
       status: 401,
-      supabase: {},
       user: null,
     });
 
@@ -87,7 +96,6 @@ describe("non-project API auth helper", () => {
       errorMessage: "Please sign in to continue.",
       ok: false,
       status: 401,
-      supabase: {},
       user: null,
     });
 
@@ -105,7 +113,6 @@ describe("non-project API auth helper", () => {
       errorMessage: "Could not prepare your account right now.",
       ok: false,
       status: 500,
-      supabase: {},
       user: null,
     });
 

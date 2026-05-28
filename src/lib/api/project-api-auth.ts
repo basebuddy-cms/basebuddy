@@ -4,18 +4,24 @@ import {
   getAuthenticatedApiRequestContext,
   type AuthenticatedApiRequestContext,
 } from "@/lib/control-plane/server";
+import type { AuthenticatedUserAccount } from "@/lib/control-plane/server";
 import { enforceSameOriginRequest } from "@/lib/api/request-guards";
 import { getSetupRequiredApiResponse } from "@/lib/api/setup-required";
+import {
+  getConfigProjectAccessContext,
+  type ConfigProjectSummary,
+} from "@/lib/basebuddy-config/projects";
+import type { ProjectMemberAccess } from "@/lib/control-plane/permissions";
 
 export const requireAuthenticatedProjectApiUser = async (options?: {
   ensurePreparedProfile?: boolean;
 }) => {
-  const setupRequiredResponse = getSetupRequiredApiResponse();
+  const setupRequiredResponse = await getSetupRequiredApiResponse();
 
   if (setupRequiredResponse) {
     return {
+      account: null,
       errorResponse: setupRequiredResponse,
-      supabase: null,
       user: null,
     };
   }
@@ -27,18 +33,18 @@ export const requireAuthenticatedProjectApiUser = async (options?: {
   if (!authResult.ok) {
     const errorResult = authResult as Extract<AuthenticatedApiRequestContext, { ok: false }>;
     return {
+      account: null,
       errorResponse: NextResponse.json(
         { error: errorResult.errorMessage },
         { status: errorResult.status },
       ),
-      supabase: errorResult.supabase,
       user: null,
     };
   }
 
   return {
+    account: authResult.account,
     errorResponse: null,
-    supabase: authResult.supabase,
     user: authResult.user,
   };
 };
@@ -53,8 +59,10 @@ type ProjectRouteParams = {
 };
 
 export type AuthenticatedProjectApiRouteContext = {
+  account: AuthenticatedUserAccount;
+  memberAccess: ProjectMemberAccess;
+  project: ConfigProjectSummary;
   projectId: string;
-  supabase: NonNullable<Awaited<ReturnType<typeof requireAuthenticatedProjectApiUser>>["supabase"]>;
   user: NonNullable<Awaited<ReturnType<typeof requireAuthenticatedProjectApiUser>>["user"]>;
 };
 
@@ -94,9 +102,27 @@ export const withAuthenticatedProjectRoute = <TResponse extends Response | Promi
       return sameOriginError;
     }
 
-    return handler(request, {
+    const projectAccess = await getConfigProjectAccessContext({
       projectId,
-      supabase: authResult.supabase,
+      userId: authResult.user.id,
+    });
+
+    if (!projectAccess) {
+      return NextResponse.json({ error: "Could not find that project." }, { status: 404 });
+    }
+
+    if (!projectAccess.memberAccess.permissions.includes("project.read")) {
+      return NextResponse.json(
+        { error: "You do not have permission to access this project." },
+        { status: 403 },
+      );
+    }
+
+    return handler(request, {
+      account: authResult.account,
+      memberAccess: projectAccess.memberAccess,
+      project: projectAccess.project,
+      projectId,
       user: authResult.user,
     });
   };

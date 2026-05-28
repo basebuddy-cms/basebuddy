@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OnboardingSetupView } from "@/components/projects/onboarding-setup-view";
+import type { BaseBuddyConfigSetupStatus } from "@/lib/basebuddy-config/setup";
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: ComponentProps<"a">) => (
@@ -12,213 +13,215 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+const incompleteStatus: BaseBuddyConfigSetupStatus = {
+  configPath: "/repo/basebuddy.config.json",
+  sections: [
+    {
+      checks: [
+        {
+          key: "basebuddy.config.exists",
+          label: "Config file exists",
+          required: true,
+          status: "missing",
+          value: "Create basebuddy.config.json.",
+        },
+      ],
+      description: "The root BaseBuddy config file at process.cwd()/basebuddy.config.json.",
+      status: "missing",
+      title: "Config file",
+    },
+  ],
+  topology: "config-file",
+};
+
+const readyStatus: BaseBuddyConfigSetupStatus = {
+  configPath: "/repo/basebuddy.config.json",
+  sections: [
+    {
+      checks: [],
+      description: "The root BaseBuddy config file at process.cwd()/basebuddy.config.json.",
+      status: "ready",
+      title: "Config file",
+    },
+    {
+      checks: [],
+      description: "The first local user for this BaseBuddy install.",
+      status: "ready",
+      title: "Owner account",
+    },
+    {
+      checks: [],
+      description: "Local session signing configuration.",
+      status: "ready",
+      title: "Environment values",
+    },
+    {
+      checks: [],
+      description: "The Postgres database that stores user content.",
+      status: "ready",
+      title: "Database connection",
+    },
+    {
+      checks: [],
+      description: "Optional Supabase credentials for images and files.",
+      status: "ready",
+      title: "Supabase storage",
+    },
+    {
+      checks: [],
+      description: "Optional shared S3-compatible upload credentials for mapped media and files.",
+      status: "ready",
+      title: "S3-compatible storage",
+    },
+  ],
+  topology: "config-file",
+};
+
 describe("OnboardingSetupView", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
   });
 
-  const openStep = (name: RegExp | string) => {
-    fireEvent.click(screen.getByRole("button", { name }));
-  };
+  it("starts with a focused database connection step", () => {
+    render(<OnboardingSetupView status={incompleteStatus} />);
 
-  const confirmEnvStep = () => {
-    openStep(/step 2 .env/i);
-    fireEvent.click(screen.getByLabelText(/i added these values to `.env`/i));
-  };
-
-  const confirmSqlStep = () => {
-    openStep(/step 3 sql/i);
-    fireEvent.click(screen.getByLabelText(/i ran the basebuddy sql/i));
-  };
-
-  const confirmAuthStep = () => {
-    openStep(/step 4 auth/i);
-    fireEvent.click(screen.getByLabelText(/i enabled these sign-in methods and added the redirect url/i));
-  };
-
-  it("renders guided install setup instead of project creation", () => {
-    render(<OnboardingSetupView />);
-
-    expect(screen.getByRole("heading", { name: /basebuddy setup/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /choose where basebuddy lives/i })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /app configuration/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /basebuddy tables/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /content connection/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /install layout/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/control-plane/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/content-plane/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/RPCs/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /open projects/i })).not.toBeInTheDocument();
-    expect(screen.getAllByText("Install").length).toBeGreaterThan(0);
-    expect(screen.getByText("Same project")).toBeInTheDocument();
-    expect(screen.getByText("Different project")).toBeInTheDocument();
-    expect(screen.queryByText(/for local supabase, add/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/setup is ready/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /create project/i })).not.toBeInTheDocument();
-  });
-
-  it("includes Vercel redirect URL guidance", () => {
-    const { container } = render(<OnboardingSetupView />);
-    confirmEnvStep();
-    confirmSqlStep();
-    openStep(/step 4 auth/i);
-    const renderedText = container.textContent ?? "";
-
-    expect(renderedText).toContain("For Vercel, add your deployed `/auth/callback` URL");
-    expect(renderedText).toContain("https://your-app.vercel.app/auth/callback");
-  });
-
-  it("lets the installer choose same-project or split-project setup without storing secrets", () => {
-    render(<OnboardingSetupView />);
-
+    expect(screen.getByRole("heading", { name: "Connect to the database" })).toBeInTheDocument();
     expect(
-      screen.getByText((content) =>
-        content.includes("Same project"),
-      ),
+      screen.getByText(/add the values from your database host, then create a strong auth secret for basebuddy sessions/i),
     ).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /for stricter separation install basebuddy in a different supabase project/i,
-      }),
-    );
-    openStep(/step 2 .env/i);
-
+    expect(screen.getByText(/add storage keys only if you want images or files in basebuddy/i)).toBeInTheDocument();
+    expect(screen.queryByText(/config file will not store these secrets/i)).not.toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("BASEBUDDY_AUTH_SECRET"))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("BASEBUDDY_CONTENT_DATABASE_URL"))).toBeInTheDocument();
+    expect(document.body.textContent).toContain("BASEBUDDY_AUTH_SECRET=");
+    expect(document.body.textContent).toContain("BASEBUDDY_CONTENT_DATABASE_URL=");
+    expect(screen.queryByText((content) => content.includes("postgresql://user:password"))).not.toBeInTheDocument();
+    expect(screen.queryByText(/[a-f0-9]{64}/i)).not.toBeInTheDocument();
+    expect(screen.getByText("cp .env.example .env")).toBeInTheDocument();
+    expect(screen.queryByText((content) => content.includes("`.env.local`"))).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/i added the env values/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
     expect(
-      screen.getByText((content) =>
-        content.includes(
-          "BASEBUDDY_CONTROL_SUPABASE_URL=https://your-basebuddy-project-ref.supabase.co",
-        ),
-      ),
-    ).toBeInTheDocument();
-    expect(window.localStorage.getItem("basebuddy.setup.installMode")).toBe("split");
-    expect(JSON.stringify(window.localStorage)).not.toContain("your-secret-key");
+      screen.getAllByText(/images and files/i)[0]?.compareDocumentPosition(
+        screen.getByText(/or use this command/i),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain("BASEBUDDY_SUPABASE_URL=");
+    expect(document.body.textContent).toContain("BASEBUDDY_SUPABASE_PUBLISHABLE_KEY=");
+    expect(document.body.textContent).toContain("BASEBUDDY_SUPABASE_SECRET_KEY=");
+    expect(screen.getByText("For Supabase media bucket storage")).toBeInTheDocument();
+    expect(screen.getByText("For S3 bucket storage")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("BASEBUDDY_CONTENT_SUPABASE_URL");
+    expect(screen.queryByLabelText(/owner name/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /let's check the setup now/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/supabase auth/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/same project/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/different project/i)).not.toBeInTheDocument();
   });
 
-  it("renders exact same-project env guidance", () => {
-    const { container } = render(<OnboardingSetupView />);
-    openStep(/step 2 .env/i);
-    const renderedText = container.textContent ?? "";
+  it("collects account details on the second page", () => {
+    render(<OnboardingSetupView status={incompleteStatus} />);
 
-    expect(renderedText).toContain(`BASEBUDDY_SUPABASE_URL=https://your-project-ref.supabase.co
-BASEBUDDY_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
-BASEBUDDY_SUPABASE_SECRET_KEY=your-secret-key
-BASEBUDDY_DATABASE_URL=postgresql://postgres.your-project-ref:your-password@aws-0-region.pooler.supabase.com:6543/postgres
-BASEBUDDY_AUTH_PROVIDERS=password`);
+    fireEvent.click(screen.getByLabelText(/i added the env values/i));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(screen.getByRole("heading", { name: /create your basebuddy account/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/owner name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/owner email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/owner password/i)).toBeInTheDocument();
+    expect(screen.queryByText("BASEBUDDY_CONTENT_DATABASE_URL")).not.toBeInTheDocument();
   });
 
-  it("renders exact split-project env guidance", () => {
-    const { container } = render(<OnboardingSetupView />);
+  it("requires a real email and strong owner password before continuing from account setup", () => {
+    render(<OnboardingSetupView status={incompleteStatus} />);
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /for stricter separation install basebuddy in a different supabase project/i,
-      }),
-    );
-    openStep(/step 2 .env/i);
-    const renderedText = container.textContent ?? "";
+    fireEvent.click(screen.getByLabelText(/i added the env values/i));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.change(screen.getByLabelText(/owner name/i), {
+      target: { value: "Owner User" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner email/i), {
+      target: { value: "owner" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner password/i), {
+      target: { value: "pass" },
+    });
 
-    expect(renderedText).toContain(`BASEBUDDY_CONTROL_SUPABASE_URL=https://your-basebuddy-project-ref.supabase.co
-BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY=your-basebuddy-publishable-key
-BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY=your-basebuddy-secret-key
-BASEBUDDY_CONTROL_DATABASE_URL=postgresql://postgres.your-basebuddy-project-ref:your-password@aws-0-region.pooler.supabase.com:6543/postgres
+    expect(screen.getByText(/enter a real email address/i)).toBeInTheDocument();
+    const weakPasswordMessage =
+      "Use at least 8 characters. Add an uppercase letter. Add a number. Add a symbol.";
 
-BASEBUDDY_CONTENT_SUPABASE_URL=https://your-content-project-ref.supabase.co
-BASEBUDDY_CONTENT_SUPABASE_PUBLISHABLE_KEY=your-content-publishable-key
-BASEBUDDY_CONTENT_SUPABASE_SECRET_KEY=your-content-secret-key
-BASEBUDDY_CONTENT_DATABASE_URL=postgresql://postgres.your-content-project-ref:your-password@aws-0-region.pooler.supabase.com:6543/postgres
-BASEBUDDY_AUTH_PROVIDERS=password`);
-  });
-
-  it("renders copyable migration SQL from the baseline file", () => {
-    const { container } = render(
-      <OnboardingSetupView
-        migrationSql={`create schema if not exists private;
-
-create table if not exists public.basebuddy_projects (
-  id uuid primary key
-);`}
-      />,
-    );
-    confirmEnvStep();
-    openStep(/step 3 sql/i);
-    const renderedText = container.textContent ?? "";
-
-    expect(screen.getByText(/run the basebuddy sql/i)).toBeInTheDocument();
-    expect(screen.getByText(/choose one method below/i)).toBeInTheDocument();
-    expect(screen.getByText(/you do not need to run both/i)).toBeInTheDocument();
-    expect(screen.getByText(/option 1: supabase cli/i)).toBeInTheDocument();
-    expect(screen.getByText(/option 2: supabase sql editor/i)).toBeInTheDocument();
-    expect(screen.getByText(/open sql editor, paste the sql, and run it once/i)).toBeInTheDocument();
-    expect(renderedText).toContain("create table if not exists public.basebuddy_projects");
-    expect(screen.getAllByText("Migration SQL").length).toBeGreaterThan(0);
-  });
-
-  it("remembers the saved env confirmation without storing env values", () => {
-    render(<OnboardingSetupView />);
-    openStep(/step 2 .env/i);
-
+    expect(screen.getByText(weakPasswordMessage)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
 
-    const savedEnvCheck = screen.getByLabelText(/i added these values to `.env`/i);
+    fireEvent.change(screen.getByLabelText(/owner email/i), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner password/i), {
+      target: { value: "OwnerPass1!" },
+    });
 
-    fireEvent.click(savedEnvCheck);
-
+    expect(screen.queryByText(/enter a real email address/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(weakPasswordMessage)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
-    expect(window.localStorage.getItem("basebuddy.setup.envSaved")).toBe("true");
-    expect(JSON.stringify(window.localStorage)).not.toContain("BASEBUDDY_SUPABASE_SECRET_KEY");
   });
 
-  it("stores Auth provider choices locally and warns when none are selected", () => {
-    render(<OnboardingSetupView />);
-    confirmEnvStep();
-    confirmSqlStep();
-    openStep(/step 4 auth/i);
+  it("automatically creates setup and runs required checks from the timeline page", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({
+          ready: false,
+          status: readyStatus,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ready: true,
+          status: readyStatus,
+        }),
+      );
 
-    const emailProvider = screen.getByLabelText(/email and password/i);
-    const googleProvider = screen.getByLabelText(/^google/i);
+    render(<OnboardingSetupView status={incompleteStatus} />);
 
-    expect(emailProvider).toBeChecked();
+    fireEvent.click(screen.getByLabelText(/i added the env values/i));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.change(screen.getByLabelText(/owner name/i), {
+      target: { value: "Owner User" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner email/i), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner password/i), {
+      target: { value: "OwnerPass1!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
 
-    fireEvent.click(googleProvider);
-    expect(window.localStorage.getItem("basebuddy.setup.authProviders")).toBe(
-      JSON.stringify(["email", "google"]),
-    );
+    expect(screen.getByRole("heading", { name: /let's check the setup now/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /run setup checks/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/basebuddy will create the config/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/passing checks stay quiet/i)).not.toBeInTheDocument();
+    for (const label of [
+      "Environment values",
+      "Owner account",
+      "Config file",
+      "Database connection",
+      "Ready to open BaseBuddy",
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
 
-    fireEvent.click(emailProvider);
-    fireEvent.click(googleProvider);
-
-    expect(screen.getByText(/choose at least one sign-in method/i)).toBeInTheDocument();
-    expect(JSON.stringify(window.localStorage)).not.toContain("secret");
-  });
-
-  it("checks setup through the setup verification API", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      Response.json({
-        ready: false,
-        status: {
-          topology: "unified",
-          sections: [
-            {
-              checks: [],
-              description: "Required app settings for this install.",
-              status: "missing",
-              title: "App configuration",
-            },
-          ],
-        },
-      }),
-    );
-
-    render(<OnboardingSetupView />);
-
-    confirmEnvStep();
-    confirmSqlStep();
-    confirmAuthStep();
-    openStep(/step 5 check/i);
-    fireEvent.click(screen.getByRole("button", { name: "Check setup" }));
-
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/setup",
+        expect.objectContaining({
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        }),
+      );
+    });
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/setup/check", {
         body: "{}",
@@ -228,63 +231,79 @@ create table if not exists public.basebuddy_projects (
         method: "POST",
       });
     });
-    expect(screen.getByRole("heading", { name: "App configuration" })).toBeInTheDocument();
-    expect(screen.getByText(/1 setup item needs attention/i)).toBeInTheDocument();
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+
+    expect(requestBody).toEqual({
+      ownerEmail: "owner@example.com",
+      ownerName: "Owner User",
+      ownerPassword: "OwnerPass1!",
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("postgresql://");
+    expect(JSON.stringify(requestBody)).not.toContain("secret-content-key");
+    expect(JSON.stringify(window.localStorage)).not.toContain("OwnerPass1!");
+    for (const label of [
+      "Environment values",
+      "Owner account",
+      "Config file",
+      "Database connection",
+      "Ready to open BaseBuddy",
+    ]) {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+    }
+    expect(screen.queryByText("Upload storage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account details")).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /open basebuddy/i })).toHaveAttribute(
+      "href",
+      "/login?email=owner%40example.com",
+    );
   });
 
-  it("renders redacted setup status values", () => {
-    render(
-      <OnboardingSetupView
-        status={{
-          topology: "split",
-          sections: [
-            {
-              checks: [
-                {
-                  key: "BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY",
-                  label: "Control-plane secret key",
-                  required: true,
-                  status: "ready",
-                  value: "set:abcd1234",
-                },
-              ],
-              description: "Canonical env values.",
-              status: "ready",
-              title: "Environment",
-            },
-            {
-              checks: [
-                {
-                  key: "BASEBUDDY_CONTENT_DATABASE_URL",
-                  label: "Content-plane database URL",
-                  required: true,
-                  status: "missing",
-                  value: null,
-                },
-              ],
-              description: "Content plane.",
-              status: "missing",
-              title: "Content-plane connectivity",
-            },
-          ],
-        }}
-      />,
-    );
+  it("shows timeline error details only for failing checks", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({ error: "Set BASEBUDDY_CONTENT_DATABASE_URL." }, { status: 400 }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ready: false,
+          status: incompleteStatus,
+        }),
+      );
 
-    confirmEnvStep();
-    confirmSqlStep();
-    confirmAuthStep();
-    openStep(/step 5 check/i);
+    render(<OnboardingSetupView status={incompleteStatus} />);
 
-    expect(screen.getAllByText("Details")).toHaveLength(2);
-    expect(screen.getByText("set:abcd1234")).not.toBeVisible();
-    expect(screen.getByRole("heading", { name: "Content connection" })).toBeInTheDocument();
-    expect(screen.getByText(/1 setup item needs attention/i)).toBeInTheDocument();
-    expect(
-      screen.getByText((content) => content.includes("BaseBuddy setup report")),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/control-plane/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/content-plane/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText("Missing").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByLabelText(/i added the env values/i));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.change(screen.getByLabelText(/owner name/i), {
+      target: { value: "Owner User" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner email/i), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/owner password/i), {
+      target: { value: "OwnerPass1!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(await screen.findByText(/set basebuddy_content_database_url/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /run setup checks/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Owner account")).toBeInTheDocument();
+    expect(screen.getByText("Config file")).toBeInTheDocument();
+    expect(screen.getByText("Database connection")).toBeInTheDocument();
+    expect(screen.getByText("Ready to open BaseBuddy")).toBeInTheDocument();
+    expect(screen.getAllByText("Waiting").length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByRole("link", { name: /open basebuddy/i })).not.toBeInTheDocument();
+  });
+
+  it("renders a read-only setup summary when setup is complete", () => {
+    render(<OnboardingSetupView readOnly status={readyStatus} />);
+
+    expect(screen.getByRole("heading", { name: /setup summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Config file" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Owner account" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Database connection" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open basebuddy/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("button", { name: /create setup/i })).not.toBeInTheDocument();
   });
 });

@@ -18,8 +18,6 @@ export type PlaywrightSeedProjectRecord = {
 
 export type PlaywrightSeedState = {
   contentDatabaseUrl?: string;
-  controlDatabaseUrl?: string;
-  controlPlaneUrl?: string;
   generatedAt: string;
   projects: {
     project: PlaywrightSeedProjectRecord;

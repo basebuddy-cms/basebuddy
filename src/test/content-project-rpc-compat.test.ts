@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("react", () => ({
@@ -7,15 +11,17 @@ vi.mock("react", () => ({
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
 }));
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(),
-}));
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: vi.fn(),
-}));
-const { introspectPostgresContentSchemaMock } = vi.hoisted(() => ({
+
+const {
+  createAdminClientMock,
+  createClientMock,
+  introspectPostgresContentSchemaMock,
+} = vi.hoisted(() => ({
+  createAdminClientMock: vi.fn(),
+  createClientMock: vi.fn(),
   introspectPostgresContentSchemaMock: vi.fn(),
 }));
+
 vi.mock("@/lib/content-runtime/adapter/postgres/introspection", async () => {
   const actual = await vi.importActual<typeof import("@/lib/content-runtime/adapter/postgres/introspection")>(
     "@/lib/content-runtime/adapter/postgres/introspection",
@@ -27,34 +33,21 @@ vi.mock("@/lib/content-runtime/adapter/postgres/introspection", async () => {
   };
 });
 
-import { createDefaultContentMappingConfig } from "@/lib/content-runtime/mapping";
+import { getBaseBuddyConfigPath } from "@/lib/basebuddy-config/paths";
+import { createDefaultBaseBuddyConfig } from "@/lib/basebuddy-config/schema";
 import {
-  getContentFilesStorageCredentialStatus,
-  getContentS3CompatibleFilesCredentials,
-} from "@/lib/content-runtime/server-project-credentials";
+  createDefaultContentMappingConfig,
+  normalizeContentProjectMapping,
+  type ContentMappingConfig,
+} from "@/lib/content-runtime/mapping";
 import {
   getContentProjectMappingDetection,
   getReadyContentProjectMapping,
   saveContentMappingRevision,
 } from "@/lib/content-runtime/server-project-mapping";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
-const createMappingRow = (mappingConfig = createDefaultContentMappingConfig()) => ({
-  binding_id: "binding-1",
-  binding_mode: "mapped_content",
-  binding_status: "draft",
-  canonical_schema_version: 1,
-  install_config: { requested_setup_path: "mapped_content" },
-  mapping_config: mappingConfig,
-  revision_created_at: "2026-03-24T00:00:00.000Z",
-  revision_id: "revision-1",
-  revision_source: "system",
-  revision_version: 1,
-  scope_config: { schema: "public" },
-  scope_mode: "database",
-  storage_bucket: null,
-});
+const fixedNow = "2026-05-28T00:00:00.000Z";
+const authSecret = "local-auth-secret-value-with-32-plus-chars";
 
 const createProjectContext = () => ({
   apiUrl: null,
@@ -77,233 +70,157 @@ const createProjectContext = () => ({
   } as never,
 });
 
-describe("content project RPC compatibility", () => {
-  beforeEach(() => {
+describe("project config mapping storage", () => {
+  const originalCwd = process.cwd();
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "basebuddy-content-project-mapping-"));
+    process.chdir(tempDir);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(fixedNow));
     vi.clearAllMocks();
     introspectPostgresContentSchemaMock.mockReset();
+    createClientMock.mockRejectedValue(new Error("Mapping persistence must not use Supabase."));
+    createAdminClientMock.mockImplementation(() => {
+      throw new Error("Mapping persistence must not use Supabase admin clients.");
+    });
   });
 
-  it("treats missing files storage env as an empty credential state without RPC fallback", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message:
-          "Could not find the function public.get_project_cms_files_storage_credential_status(p_project_id) in the schema cache",
-      },
+  afterEach(async () => {
+    vi.useRealTimers();
+    process.chdir(originalCwd);
+    await rm(tempDir, { force: true, recursive: true });
+  });
+
+  const writeProjectConfig = async ({
+    bindingStatus = "draft",
+    mappingConfig = createDefaultContentMappingConfig(),
+  }: {
+    bindingStatus?: "draft" | "ready";
+    mappingConfig?: ContentMappingConfig;
+  } = {}) => {
+    const mapping = normalizeContentProjectMapping({
+      bindingId: "project-1",
+      bindingMode: "mapped_content",
+      bindingStatus,
+      mappingConfig,
+      revisionId: "revision-1",
+      revisionVersion: 1,
     });
 
-    vi.mocked(createClient).mockResolvedValue({
-      rpc,
-    } as never);
-    vi.mocked(createAdminClient).mockReturnValue({
-      rpc,
-    } as never);
+    await writeFile(
+      getBaseBuddyConfigPath(),
+      JSON.stringify(
+        {
+          ...createDefaultBaseBuddyConfig({
+            now: fixedNow,
+          }),
+          projects: [
+            {
+              createdAt: fixedNow,
+              createdBy: "user-1",
+              id: "project-1",
+              mapping,
+              mappingRevisions: [
+                {
+                  bindingStatus,
+                  createdAt: "2026-05-27T00:00:00.000Z",
+                  id: "revision-1",
+                  mappingConfig,
+                  source: "system",
+                  version: 1,
+                },
+              ],
+              members: [],
+              name: "Demo Project",
+              sidebar: null,
+              sidebarRevisions: [],
+              slug: "demo-project",
+              status: "active",
+              updatedAt: fixedNow,
+              websiteUrl: null,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+  };
 
-    await expect(getContentFilesStorageCredentialStatus("project-1")).resolves.toEqual({
+  const readSavedProject = async () => {
+    const config = JSON.parse(await readFile(getBaseBuddyConfigPath(), "utf8")) as ReturnType<
+      typeof createDefaultBaseBuddyConfig
+    >;
+
+    return config.projects[0]!;
+  };
+
+  const createDependencies = (context = createProjectContext()) => ({
+    ensureProjectManagementPermission: vi.fn(),
+    ensureProjectPermission: vi.fn(),
+    getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
       hasS3AccessKeyId: false,
       hasS3SecretAccessKey: false,
-    });
-    expect(rpc).not.toHaveBeenCalled();
+    }),
+    getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
+      hasS3AccessKeyId: false,
+      hasS3SecretAccessKey: false,
+    }),
+    getProjectContext: vi.fn().mockResolvedValue(context),
+    withContentDatabaseClient: vi.fn(),
   });
 
-  it("treats missing files storage env as no saved credentials without RPC fallback", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message:
-          "Could not find the function public.get_project_cms_files_storage_credentials(p_project_id) in the schema cache",
-      },
-    });
-
-    vi.mocked(createAdminClient).mockReturnValue({
-      rpc,
-    } as never);
-
-    await expect(getContentS3CompatibleFilesCredentials("project-1")).resolves.toBeNull();
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("omits files storage save params when the mapping is not using files storage", async () => {
-    const rpc = vi.fn().mockImplementation((name: string, params: Record<string, unknown>) => {
-      if (name === "save_project_content_mapping_revision") {
-        return Promise.resolve({
-          data: null,
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_runtime_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      throw new Error(`Unexpected RPC call: ${name}`);
-    });
-
-    vi.mocked(createClient).mockResolvedValue({
-      rpc,
-    } as never);
+  it("saves mapping revisions to config without control-plane RPCs", async () => {
+    await writeProjectConfig();
+    const mappingConfig = createDefaultContentMappingConfig();
+    mappingConfig.entities.posts.status = "mapped";
+    mappingConfig.entities.posts.source = {
+      kind: "table",
+      primaryKey: "id",
+      schema: "public",
+      table: "posts",
+    };
 
     const mapping = await saveContentMappingRevision({
-      bindingStatus: "draft",
-      dependencies: {
-        ensureProjectManagementPermission: vi.fn(),
-        ensureProjectPermission: vi.fn(),
-        getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-        withContentDatabaseClient: vi.fn(),
-      },
-      mappingConfig: createDefaultContentMappingConfig(),
-      mappingScope: "full",
-      projectId: "project-1",
-      source: "system",
-    });
-
-    const saveCall = rpc.mock.calls.find(([name]) => name === "save_project_content_mapping_revision");
-    const saveParams = saveCall?.[1] as Record<string, unknown>;
-
-    expect(saveParams).toBeDefined();
-    expect(saveParams).not.toHaveProperty("p_files_s3_access_key_id_auth_tag");
-    expect(saveParams).not.toHaveProperty("p_files_s3_access_key_id_ciphertext");
-    expect(saveParams).not.toHaveProperty("p_files_s3_secret_access_key_auth_tag");
-    expect(saveParams).not.toHaveProperty("p_files_s3_secret_access_key_ciphertext");
-    expect(saveParams).toMatchObject({
-      p_binding_status: "draft",
-      p_project_id: "project-1",
-      p_source: "system",
-    });
-    expect(mapping.revisionId).toBe("revision-1");
-  });
-
-  it("does not include project-level S3 secret parameters when saving mappings", async () => {
-    const mappingConfig = createDefaultContentMappingConfig();
-    mappingConfig.mediaStorage = {
-      bucketName: "media-assets",
-      endpoint: "https://media.r2.cloudflarestorage.com",
-      provider: "s3_compatible",
-      publicUrlBase: null,
-      region: "auto",
-    };
-    mappingConfig.filesStorage = {
-      bucketName: "file-assets",
-      endpoint: "https://files.r2.cloudflarestorage.com",
-      provider: "s3_compatible",
-      publicUrlBase: null,
-      region: "auto",
-    };
-
-    const rpc = vi.fn().mockImplementation((name: string, params: Record<string, unknown>) => {
-      if (name === "save_project_content_mapping_revision") {
-        return Promise.resolve({
-          data: null,
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_runtime_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      throw new Error(`Unexpected RPC call: ${name}`);
-    });
-
-    vi.mocked(createClient).mockResolvedValue({
-      rpc,
-    } as never);
-
-    await saveContentMappingRevision({
-      dependencies: {
-        ensureProjectManagementPermission: vi.fn(),
-        ensureProjectPermission: vi.fn(),
-        getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: true,
-          hasS3SecretAccessKey: true,
-        }),
-        getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: true,
-          hasS3SecretAccessKey: true,
-        }),
-        getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-        withContentDatabaseClient: vi.fn(),
-      },
+      bindingStatus: "ready",
+      dependencies: createDependencies(),
       mappingConfig,
       mappingScope: "full",
       projectId: "project-1",
       source: "manual",
     });
+    const savedProject = await readSavedProject();
 
-    const saveCall = rpc.mock.calls.find(([name]) => name === "save_project_content_mapping_revision");
-    const saveParams = saveCall?.[1] as Record<string, unknown>;
-
-    expect(saveParams).toBeDefined();
-    expect(Object.keys(saveParams).filter((key) => key.includes("_s3_"))).toEqual([]);
-  });
-
-  it("requires upload storage credentials before saving external storage", async () => {
-    const mappingConfig = createDefaultContentMappingConfig();
-    mappingConfig.mediaStorage = {
-      bucketName: "media-assets",
-      endpoint: "https://media.r2.cloudflarestorage.com",
-      provider: "s3_compatible",
-      publicUrlBase: null,
-      region: "auto",
-    };
-
-    await expect(
-      saveContentMappingRevision({
-        dependencies: {
-          ensureProjectManagementPermission: vi.fn(),
-          ensureProjectPermission: vi.fn(),
-          getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-            hasS3AccessKeyId: false,
-            hasS3SecretAccessKey: false,
-          }),
-          getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-            hasS3AccessKeyId: false,
-            hasS3SecretAccessKey: false,
-          }),
-          getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-          withContentDatabaseClient: vi.fn(),
-        },
-        mappingConfig,
-        mappingScope: "media",
-        projectId: "project-1",
-        source: "manual",
+    expect(mapping).toMatchObject({
+      bindingId: "project-1",
+      bindingStatus: "ready",
+      revisionVersion: 2,
+    });
+    expect(mapping.revisionId).not.toBe("revision-1");
+    expect(normalizeContentProjectMapping(savedProject.mapping)).toEqual(mapping);
+    expect(savedProject.mappingRevisions).toEqual([
+      expect.objectContaining({
+        id: "revision-1",
+        source: "system",
+        version: 1,
       }),
-    ).rejects.toThrow(
-      "Add media upload storage credentials in the app configuration before saving this setup.",
-    );
+      {
+        bindingStatus: "ready",
+        createdAt: fixedNow,
+        id: mapping.revisionId,
+        mappingConfig: mapping.mappingConfig,
+        source: "manual",
+        version: 2,
+      },
+    ]);
+    expect(createClientMock).not.toHaveBeenCalled();
+    expect(createAdminClientMock).not.toHaveBeenCalled();
   });
 
-  it("merges category saves into the stored mapping instead of replacing posts", async () => {
+  it("merges category saves into the stored config mapping instead of replacing posts", async () => {
     const currentConfig = createDefaultContentMappingConfig();
     currentConfig.entities.posts.status = "mapped";
     currentConfig.entities.posts.source = {
@@ -314,6 +231,9 @@ describe("content project RPC compatibility", () => {
     };
     currentConfig.entities.posts.fields.id.column = "id";
     currentConfig.entities.posts.fields.title.column = "title";
+    await writeProjectConfig({
+      mappingConfig: currentConfig,
+    });
 
     const incomingConfig = createDefaultContentMappingConfig();
     incomingConfig.entities.categories.status = "mapped";
@@ -332,61 +252,17 @@ describe("content project RPC compatibility", () => {
       targetTable: "public.categories",
     };
 
-    const rpc = vi.fn().mockImplementation((name: string, params: Record<string, unknown>) => {
-      if (name === "get_project_content_runtime_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(currentConfig),
-          error: null,
-        });
-      }
-
-      if (name === "save_project_content_mapping_revision") {
-        return Promise.resolve({
-          data: null,
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      throw new Error(`Unexpected RPC call: ${name}`);
-    });
-
-    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
-    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
-
-    await saveContentMappingRevision({
-      dependencies: {
-        ensureProjectManagementPermission: vi.fn(),
-        ensureProjectPermission: vi.fn(),
-        getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-        withContentDatabaseClient: vi.fn(),
-      },
+    const mapping = await saveContentMappingRevision({
+      dependencies: createDependencies(),
       mappingConfig: incomingConfig,
       mappingScope: "categories",
       projectId: "project-1",
       source: "manual",
     });
 
-    const saveCall = rpc.mock.calls.find(([name]) => name === "save_project_content_mapping_revision");
-    const saveParams = saveCall?.[1] as { p_mapping_config: ReturnType<typeof createDefaultContentMappingConfig> };
-
-    expect(saveParams.p_mapping_config.entities.posts.source.table).toBe("posts");
-    expect(saveParams.p_mapping_config.entities.categories.source.table).toBe("categories");
-    expect(saveParams.p_mapping_config.entities.posts.relations.categories?.targetTable).toBe(
+    expect(mapping.mappingConfig.entities.posts.source.table).toBe("posts");
+    expect(mapping.mappingConfig.entities.categories.source.table).toBe("categories");
+    expect(mapping.mappingConfig.entities.posts.relations.categories?.targetTable).toBe(
       "public.categories",
     );
   });
@@ -400,6 +276,9 @@ describe("content project RPC compatibility", () => {
       publicUrlBase: null,
       region: null,
     };
+    await writeProjectConfig({
+      mappingConfig: currentConfig,
+    });
 
     const incomingConfig = createDefaultContentMappingConfig();
     incomingConfig.mediaStorage = {
@@ -410,138 +289,47 @@ describe("content project RPC compatibility", () => {
       region: null,
     };
 
-    const rpc = vi.fn().mockImplementation((name: string, params: Record<string, unknown>) => {
-      if (name === "get_project_content_runtime_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(currentConfig),
-          error: null,
-        });
-      }
-
-      if (name === "save_project_content_mapping_revision") {
-        return Promise.resolve({
-          data: null,
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      throw new Error(`Unexpected RPC call: ${name}`);
-    });
-
-    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
-    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
-
-    await saveContentMappingRevision({
-      dependencies: {
-        ensureProjectManagementPermission: vi.fn(),
-        ensureProjectPermission: vi.fn(),
-        getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-        withContentDatabaseClient: vi.fn(),
-      },
+    const mapping = await saveContentMappingRevision({
+      dependencies: createDependencies(),
       mappingConfig: incomingConfig,
       mappingScope: "media",
       projectId: "project-1",
       source: "manual",
     });
 
-    const saveCall = rpc.mock.calls.find(([name]) => name === "save_project_content_mapping_revision");
-    const saveParams = saveCall?.[1] as { p_mapping_config: ReturnType<typeof createDefaultContentMappingConfig> };
-
-    expect(saveParams.p_mapping_config.mediaStorage?.bucketName).toBe("images");
-    expect(saveParams.p_mapping_config.filesStorage?.bucketName).toBe("docs");
+    expect(mapping.mappingConfig.mediaStorage?.bucketName).toBe("images");
+    expect(mapping.mappingConfig.filesStorage?.bucketName).toBe("docs");
   });
 
-  it("keeps media storage untouched when saving files scope", async () => {
-    const currentConfig = createDefaultContentMappingConfig();
-    currentConfig.mediaStorage = {
-      bucketName: "images",
-      endpoint: null,
-      provider: "supabase_bucket",
+  it("requires media storage credentials before saving external storage", async () => {
+    await writeProjectConfig();
+    const mappingConfig = createDefaultContentMappingConfig();
+    mappingConfig.mediaStorage = {
+      bucketName: "media-assets",
+      endpoint: "https://media.r2.cloudflarestorage.com",
+      provider: "s3_compatible",
       publicUrlBase: null,
-      region: null,
+      region: "auto",
     };
 
-    const incomingConfig = createDefaultContentMappingConfig();
-    incomingConfig.filesStorage = {
-      bucketName: "docs",
-      endpoint: null,
-      provider: "supabase_bucket",
-      publicUrlBase: null,
-      region: null,
-    };
+    await expect(
+      saveContentMappingRevision({
+        dependencies: createDependencies(),
+        mappingConfig,
+        mappingScope: "media",
+        projectId: "project-1",
+        source: "manual",
+      }),
+    ).rejects.toThrow(
+      "Add media storage keys in environment values before saving this mapping.",
+    );
 
-    const rpc = vi.fn().mockImplementation((name: string, params: Record<string, unknown>) => {
-      if (name === "get_project_content_runtime_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(currentConfig),
-          error: null,
-        });
-      }
-
-      if (name === "save_project_content_mapping_revision") {
-        return Promise.resolve({
-          data: null,
-          error: null,
-        });
-      }
-
-      if (name === "get_project_content_mapping") {
-        return Promise.resolve({
-          data: createMappingRow(params.p_mapping_config as never),
-          error: null,
-        });
-      }
-
-      throw new Error(`Unexpected RPC call: ${name}`);
-    });
-
-    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
-    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
-
-    await saveContentMappingRevision({
-      dependencies: {
-        ensureProjectManagementPermission: vi.fn(),
-        ensureProjectPermission: vi.fn(),
-        getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-          hasS3AccessKeyId: false,
-          hasS3SecretAccessKey: false,
-        }),
-        getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-        withContentDatabaseClient: vi.fn(),
-      },
-      mappingConfig: incomingConfig,
-      mappingScope: "files",
-      projectId: "project-1",
-      source: "manual",
-    });
-
-    const saveCall = rpc.mock.calls.find(([name]) => name === "save_project_content_mapping_revision");
-    const saveParams = saveCall?.[1] as { p_mapping_config: ReturnType<typeof createDefaultContentMappingConfig> };
-
-    expect(saveParams.p_mapping_config.filesStorage?.bucketName).toBe("docs");
-    expect(saveParams.p_mapping_config.mediaStorage?.bucketName).toBe("images");
+    expect((await readSavedProject()).mappingRevisions).toHaveLength(1);
+    expect(createClientMock).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate column mappings before saving", async () => {
+    await writeProjectConfig();
     const mappingConfig = createDefaultContentMappingConfig();
     mappingConfig.entities.posts.status = "mapped";
     mappingConfig.entities.posts.source = {
@@ -554,27 +342,9 @@ describe("content project RPC compatibility", () => {
     mappingConfig.entities.posts.fields.title.column = "title";
     mappingConfig.entities.posts.fields.slug.column = "title";
 
-    const rpc = vi.fn();
-
-    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
-    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
-
     await expect(
       saveContentMappingRevision({
-        dependencies: {
-          ensureProjectManagementPermission: vi.fn(),
-          ensureProjectPermission: vi.fn(),
-          getFilesStorageCredentialStatus: vi.fn().mockResolvedValue({
-            hasS3AccessKeyId: false,
-            hasS3SecretAccessKey: false,
-          }),
-          getMediaStorageCredentialStatus: vi.fn().mockResolvedValue({
-            hasS3AccessKeyId: false,
-            hasS3SecretAccessKey: false,
-          }),
-          getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-          withContentDatabaseClient: vi.fn(),
-        },
+        dependencies: createDependencies(),
         mappingConfig,
         mappingScope: "full",
         projectId: "project-1",
@@ -582,10 +352,11 @@ describe("content project RPC compatibility", () => {
       }),
     ).rejects.toThrow(/mapped more than once/i);
 
-    expect(rpc).not.toHaveBeenCalled();
+    expect((await readSavedProject()).mappingRevisions).toHaveLength(1);
+    expect(createClientMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to the authenticated mapping RPC when the runtime RPC is unavailable", async () => {
+  it("returns a ready runtime mapping from config without full schema repair", async () => {
     const mappingConfig = createDefaultContentMappingConfig();
     mappingConfig.entities.posts.status = "mapped";
     mappingConfig.entities.posts.source = {
@@ -596,88 +367,11 @@ describe("content project RPC compatibility", () => {
     };
     mappingConfig.entities.posts.fields.id.column = "id";
     mappingConfig.entities.posts.fields.title.column = "title";
-    const readyMappingRow = {
-      ...createMappingRow(mappingConfig),
-      binding_status: "ready",
-    };
-
-    const rpc = vi.fn().mockImplementation((name: string) => {
-      if (name === "get_project_content_runtime_mapping") {
-        return Promise.resolve({
-          data: null,
-          error: {
-            code: "PGRST202",
-            message:
-              "Could not find the function public.get_project_content_runtime_mapping(p_project_id) in the schema cache",
-          },
-        });
-      }
-
-      if (name === "get_project_content_mapping") {
-        return Promise.resolve({
-          data: readyMappingRow,
-          error: null,
-        });
-      }
-
-      throw new Error(`Unexpected RPC call: ${name}`);
-    });
-
-    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
-    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
-
-    await expect(
-      getReadyContentProjectMapping({
-        context: {
-          ...createProjectContext(),
-          connectionString: null,
-        },
-        dependencies: {
-          ensureProjectManagementPermission: vi.fn(),
-          ensureProjectPermission: vi.fn(),
-          getFilesStorageCredentialStatus: vi.fn(),
-          getMediaStorageCredentialStatus: vi.fn(),
-          getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
-          withContentDatabaseClient: vi.fn(),
-        },
-        projectId: "project-1",
-      }),
-    ).resolves.toMatchObject({
+    await writeProjectConfig({
       bindingStatus: "ready",
-      mappingConfig: expect.objectContaining({
-        entities: expect.objectContaining({
-          posts: expect.objectContaining({
-            source: expect.objectContaining({
-              table: "posts",
-            }),
-          }),
-        }),
-      }),
-    });
-  });
-
-  it("does not run full schema repair before returning a ready runtime mapping", async () => {
-    const mappingConfig = createDefaultContentMappingConfig();
-    mappingConfig.entities.posts.status = "mapped";
-    mappingConfig.entities.posts.source = {
-      kind: "table",
-      primaryKey: "id",
-      schema: "public",
-      table: "posts",
-    };
-    mappingConfig.entities.posts.fields.id.column = "id";
-    mappingConfig.entities.posts.fields.title.column = "title";
-    const readyMappingRow = {
-      ...createMappingRow(mappingConfig),
-      binding_status: "ready",
-    };
-    const rpc = vi.fn().mockResolvedValue({
-      data: readyMappingRow,
-      error: null,
+      mappingConfig,
     });
     const withContentDatabaseClient = vi.fn();
-
-    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
 
     await expect(
       getReadyContentProjectMapping({
@@ -686,11 +380,7 @@ describe("content project RPC compatibility", () => {
           connectionString: "postgresql://content",
         },
         dependencies: {
-          ensureProjectManagementPermission: vi.fn(),
-          ensureProjectPermission: vi.fn(),
-          getFilesStorageCredentialStatus: vi.fn(),
-          getMediaStorageCredentialStatus: vi.fn(),
-          getProjectContext: vi.fn().mockResolvedValue(createProjectContext()),
+          ...createDependencies(),
           withContentDatabaseClient,
         },
         projectId: "project-1",
@@ -723,11 +413,7 @@ describe("content project RPC compatibility", () => {
     await expect(
       getContentProjectMappingDetection({
         dependencies: {
-          ensureProjectManagementPermission: vi.fn(),
-          ensureProjectPermission: vi.fn(),
-          getFilesStorageCredentialStatus: vi.fn(),
-          getMediaStorageCredentialStatus: vi.fn(),
-          getProjectContext: vi.fn().mockResolvedValue({
+          ...createDependencies({
             ...createProjectContext(),
             connectionString: "postgres://db",
           }),
@@ -750,6 +436,7 @@ describe("content project RPC compatibility", () => {
         restrictToTableRefs: ["public.posts"],
       }),
     );
+    void withContentDatabaseClient;
   });
 
   it("times out broad mapping detection with a manual fallback message", async () => {
@@ -765,11 +452,7 @@ describe("content project RPC compatibility", () => {
 
       const detectionPromise = getContentProjectMappingDetection({
         dependencies: {
-          ensureProjectManagementPermission: vi.fn(),
-          ensureProjectPermission: vi.fn(),
-          getFilesStorageCredentialStatus: vi.fn(),
-          getMediaStorageCredentialStatus: vi.fn(),
-          getProjectContext: vi.fn().mockResolvedValue({
+          ...createDependencies({
             ...createProjectContext(),
             connectionString: "postgres://db",
           }),

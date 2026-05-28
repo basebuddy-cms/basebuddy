@@ -5,16 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 globalThis.React = React;
 
 const {
-  getControlPlaneSchemaSetupSectionMock,
-  getInstallSetupStatusMock,
+  getBaseBuddyConfigSetupStatusMock,
   getProjectsPageBootstrapMock,
-  isInstallSetupReadyMock,
+  isBaseBuddyConfigSetupReadyMock,
   redirectMock,
 } = vi.hoisted(() => ({
-  getControlPlaneSchemaSetupSectionMock: vi.fn(),
-  getInstallSetupStatusMock: vi.fn(),
+  getBaseBuddyConfigSetupStatusMock: vi.fn(),
   getProjectsPageBootstrapMock: vi.fn(),
-  isInstallSetupReadyMock: vi.fn(),
+  isBaseBuddyConfigSetupReadyMock: vi.fn(),
   redirectMock: vi.fn(),
 }));
 
@@ -53,29 +51,23 @@ vi.mock("@/lib/control-plane/server", () => ({
   getProjectsPageBootstrap: getProjectsPageBootstrapMock,
 }));
 
-vi.mock("@/lib/self-host/install-runtime", () => ({
-  getControlPlaneSchemaSetupSection: getControlPlaneSchemaSetupSectionMock,
-  getInstallSetupStatus: getInstallSetupStatusMock,
-  isInstallSetupReady: isInstallSetupReadyMock,
+vi.mock("@/lib/basebuddy-config/setup", () => ({
+  getBaseBuddyConfigSetupStatus: getBaseBuddyConfigSetupStatusMock,
+  isBaseBuddyConfigSetupReady: isBaseBuddyConfigSetupReadyMock,
 }));
 
 describe("projects page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getControlPlaneSchemaSetupSectionMock.mockResolvedValue({
-      checks: [],
-      description: "Ready",
-      status: "ready",
-      title: "BaseBuddy tables",
-    });
-    getInstallSetupStatusMock.mockReturnValue({
+    getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
+      configPath: "/repo/basebuddy.config.json",
       sections: [],
-      topology: "unified",
+      topology: "config-file",
     });
-    isInstallSetupReadyMock.mockReturnValue(true);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(true);
   });
 
-  it("describes the project list as the local self-host install workspace", async () => {
+  it("describes the project list in product language", async () => {
     getProjectsPageBootstrapMock.mockResolvedValue({
       account: {
         avatarUrl: null,
@@ -91,7 +83,7 @@ describe("projects page", () => {
 
     render(await ProjectsPage());
 
-    expect(screen.getByText("Workspaces in this install")).toBeInTheDocument();
+    expect(screen.getByText("Your connected content projects")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /setup/i })).not.toBeInTheDocument();
     expect(screen.getByText("Create your first project, then connect your content.")).toBeInTheDocument();
     expect(screen.getByLabelText(/project name/i)).toBeInTheDocument();
@@ -100,7 +92,7 @@ describe("projects page", () => {
   });
 
   it("redirects to setup before loading projects when setup is incomplete", async () => {
-    isInstallSetupReadyMock.mockReturnValue(false);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(false);
     redirectMock.mockImplementationOnce(() => {
       throw new Error("NEXT_REDIRECT");
     });

@@ -5,9 +5,9 @@ const INVALID_REQUEST_MESSAGE =
   "Some information is missing or invalid. Please review and try again.";
 const REQUEST_PROCESSING_MESSAGE = "We couldn't process that request. Please try again.";
 const STORAGE_REQUEST_MESSAGE =
-  "We couldn't complete the storage request. Check upload storage and try again.";
+  "We couldn't complete the storage request. Check media storage and try again.";
 const STORAGE_UPLOAD_MESSAGE =
-  "We couldn't upload this file. Check upload storage and try again.";
+  "We couldn't upload this file. Check media storage and try again.";
 
 const SAFE_EXACT_MESSAGES = new Set([
   SIGN_IN_REQUIRED_MESSAGE,
@@ -36,11 +36,12 @@ const SAFE_MESSAGE_PATTERNS = [
   /^[A-Z][A-Za-z0-9 _-]{0,60} is too long\.$/,
   /^[A-Z][A-Za-z0-9 _-]{0,60} must be [^.]+\.$/,
   /^A permission cannot be both allowed and denied\.$/i,
+  /^At least one member must keep permission to manage members\.$/i,
   /^This slug is (?:available|already taken)\.$/i,
   /^Finish [^.]+\.$/i,
   /^Map a supported [^.]+\.$/i,
   /^The (?:files|media) library is not configured[^.]*\.$/i,
-  /^Finish content setup before [^.]+\.$/i,
+  /^Finish mapping before [^.]+\.$/i,
   /^SVG uploads are not allowed\.$/i,
   /^Files must be one of: .+\.$/i,
   /^Image files belong in the media library\. Upload them from Media instead\.$/i,
@@ -60,22 +61,27 @@ const MESSAGE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string | ((mes
   },
   {
     pattern:
-      /BaseBuddy still needs a required setup update|Apply the latest Supabase migrations|still needs a required setup update/i,
+      /BaseBuddy still needs a required setup update|Update basebuddy\.config\.json|Apply the latest setup update|still needs a required setup update/i,
     replacement: TEMPORARY_UNAVAILABLE_MESSAGE,
   },
   {
     pattern: /Missing required environment variable/i,
-    replacement: "BaseBuddy needs a setup update. Check the app configuration and try again.",
+    replacement: "BaseBuddy needs a setup update. Open setup and check the environment values.",
   },
   {
-    pattern: /Could not apply the BaseBuddy control(?:-| )plane schema|Could not install the control(?:-| )plane schema/i,
+    pattern: /Missing root config file/i,
+    replacement: "BaseBuddy needs a setup update. Open setup and check the BaseBuddy config.",
+  },
+  {
+    pattern:
+      /Could not apply the BaseBuddy .* schema|Could not install the .* schema|Could not write basebuddy\.config\.json|project root config file/i,
     replacement:
-      "We couldn't finish preparing this workspace. Check the setup permissions and try again.",
+      "We couldn't finish preparing this project. Check the setup permissions and try again.",
   },
   {
     pattern: /Could not create the project media bucket/i,
     replacement:
-      "We couldn't finish preparing media storage for this workspace. Check the setup permissions and try again.",
+      "We couldn't finish preparing media storage for this project. Check the setup permissions and try again.",
   },
   {
     pattern: /schema cache|PGRST\d+|RPC|function .* does not exist/i,
@@ -83,7 +89,7 @@ const MESSAGE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string | ((mes
   },
   {
     pattern: /Session Pooler|Mapped\s+content requires/i,
-    replacement: "This project needs a content connection before you can continue.",
+    replacement: "This project needs a working database connection before you can continue.",
   },
   {
     pattern: /MaxClientsInSessionMode|max clients reached/i,
@@ -100,7 +106,7 @@ const MESSAGE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string | ((mes
   {
     pattern:
       /relation .* does not exist|column .* does not exist|A mapped (?:table|column) does not exist in the (?:connected|installation) database/i,
-    replacement: "This project's content setup is out of date. Review the setup and try again.",
+    replacement: "This project's mapping is out of date. Review the mapping and try again.",
   },
   {
     pattern: /adapter|storage shape|helper row/i,
@@ -130,27 +136,31 @@ const SETUP_OWNER_MESSAGE_REPLACEMENTS: Array<{
   replacement: string | ((message: string, match: RegExpExecArray) => string);
 }> = [
   {
+    pattern: /Missing root config file|basebuddy\.config\.json/i,
+    replacement: "Open onboarding or run the BaseBuddy CLI setup command to create basebuddy.config.json.",
+  },
+  {
     pattern: /Missing required environment variable:?\s*([A-Z0-9_]+)/i,
     replacement: (_message, match) =>
       `Set ${match[1]} in .env, restart the app, and run setup checks again.`,
   },
   {
     pattern: /schema cache|PGRST\d+|RPC|function .* does not exist/i,
-    replacement: "BaseBuddy tables are not up to date. Run the setup SQL, then run setup checks again.",
+    replacement: "BaseBuddy needs a setup update. Open setup and run the latest checks.",
   },
   {
     pattern:
-      /Could not apply the BaseBuddy control(?:-| )plane schema|Could not install the control(?:-| )plane schema/i,
-    replacement: "BaseBuddy tables could not be installed. Check database permissions and run setup again.",
+      /Could not apply the BaseBuddy .* schema|Could not install the .* schema/i,
+    replacement: "BaseBuddy setup could not be completed. Check file permissions and run setup again.",
   },
   {
     pattern: /Session Pooler|Mapped\s+content requires/i,
-    replacement: "Check the content connection settings, then run setup checks again.",
+    replacement: "Check the database connection, then run setup checks again.",
   },
   {
     pattern:
       /SignatureDoesNotMatch|AccessDenied|NoSuchBucket|InvalidAccessKeyId|Could not reach the configured (?:S3[- ]compatible )?storage/i,
-    replacement: "Check upload storage credentials and permissions, then run setup checks again.",
+    replacement: "Check media storage environment values and permissions, then run setup checks again.",
   },
 ];
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAuthenticatedApiUser } from "@/lib/api/api-auth";
+import { isConfigProjectSlugAvailable } from "@/lib/basebuddy-config/projects";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
 import { normalizeProjectSlug } from "@/lib/control-plane/utils";
 
@@ -21,21 +22,18 @@ export async function GET(request: Request) {
     return authResult.errorResponse;
   }
 
-  const { supabase } = authResult;
-  const { data, error } = await supabase.rpc("is_project_slug_available", {
-    p_slug: normalizedSlug,
-  });
+  try {
+    const available = await isConfigProjectSlugAvailable(normalizedSlug);
 
-  if (error) {
+    return NextResponse.json({
+      available,
+      normalizedSlug,
+    });
+  } catch (error) {
     const message = getProductionErrorMessage(error, "Could not check project address availability right now.");
     return NextResponse.json(
       { error: message },
       { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    available: Boolean(data),
-    normalizedSlug,
-  });
 }

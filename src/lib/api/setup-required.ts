@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
 
-import { APP_SETUP_REQUIRED_MESSAGE } from "@/lib/control-plane/server";
-import { validateInstallRuntimeConfiguration } from "@/lib/self-host/install-runtime";
+import {
+  BASEBUDDY_SETUP_REQUIRED_MESSAGE,
+  getBaseBuddyConfigSetupStatus,
+  isBaseBuddyConfigSetupReady,
+} from "@/lib/basebuddy-config/setup";
 
-export const getSetupRequiredApiResponse = () => {
-  try {
-    validateInstallRuntimeConfiguration();
+export const getSetupRequiredApiResponse = async () => {
+  const status = await getBaseBuddyConfigSetupStatus();
+
+  if (isBaseBuddyConfigSetupReady(status)) {
     return null;
-  } catch {
-    return NextResponse.json(
-      {
-        error: APP_SETUP_REQUIRED_MESSAGE,
-        setupRequired: true,
-      },
-      { status: 503 },
-    );
   }
+
+  return NextResponse.json(
+    {
+      error: BASEBUDDY_SETUP_REQUIRED_MESSAGE,
+      setupRequired: true,
+    },
+    { status: 503 },
+  );
 };

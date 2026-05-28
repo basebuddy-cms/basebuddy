@@ -6,7 +6,7 @@ import type { AcceptProjectMemberInvitationResult } from "@/lib/control-plane/me
 import { invalidateControlPlaneRuntimeCache } from "@/lib/control-plane/server-runtime-cache";
 import { invalidateContentProjectContextCaches } from "@/lib/content-runtime/server-project-context";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
-import { createClient } from "@/lib/supabase/server";
+import { acceptConfigProjectMemberInvitation } from "@/lib/basebuddy-config/projects";
 
 export const runtime = "nodejs";
 
@@ -20,12 +20,6 @@ const logProjectMemberInvitationAcceptRouteError = (
     ...metadata,
     operation,
   });
-};
-
-type AcceptProjectMemberInvitationRow = {
-  membership_status: "accepted" | "already_member";
-  project_id: string;
-  project_slug: string;
 };
 
 const getInvitationAcceptStatus = (message: string) => {
@@ -87,34 +81,20 @@ export const POST = async (
   }
 
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("accept_project_member_invitation", {
-      p_public_token: normalizedToken,
+    const invitation = await acceptConfigProjectMemberInvitation({
+      publicToken: normalizedToken,
+      userEmail: authResult.account?.email ?? authResult.user.email ?? null,
+      userId: authResult.user.id,
     });
-
-    if (error) {
-      logProjectMemberInvitationAcceptRouteError("accept", error, {
-        publicTokenSuffix: normalizedToken.slice(-6),
-      });
-
-      const message = getProductionErrorMessage(error, "Could not accept this invitation right now.");
-      return NextResponse.json({ error: message }, { status: getInvitationAcceptStatus(message) });
-    }
-
-    const invitation = ((Array.isArray(data) ? data[0] : data) ?? null) as AcceptProjectMemberInvitationRow | null;
-
-    if (!invitation?.project_id || !invitation.project_slug || !invitation.membership_status) {
-      return NextResponse.json({ error: "Could not accept this invitation right now." }, { status: 500 });
-    }
 
     invalidateControlPlaneRuntimeCache({
-      projectId: invitation.project_id,
+      projectId: invitation.projectId,
     });
-    invalidateContentProjectContextCaches(invitation.project_id);
+    invalidateContentProjectContextCaches(invitation.projectId);
 
     return NextResponse.json({
-      redirectTo: `/projects/${invitation.project_slug}`,
-      status: invitation.membership_status,
+      redirectTo: invitation.redirectTo,
+      status: invitation.status,
     } satisfies AcceptProjectMemberInvitationResult);
   } catch (error) {
     logProjectMemberInvitationAcceptRouteError("accept:unhandled", error, {

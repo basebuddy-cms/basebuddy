@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     default: baseBuddyBranding.appName,
     template: `%s | ${baseBuddyBranding.appName}`,
   },
-  description: "A self-hosted content editor for connected content.",
+  description: "A content editor for connected content.",
   icons: {
     icon: "/basebuddy-icon.svg",
   },

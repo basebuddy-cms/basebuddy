@@ -11,20 +11,24 @@ test.describe("public pages", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Welcome back" })).toBeVisible();
   });
 
-  test("renders the login page with all sign-in options", async ({ page }) => {
+  test("renders the login page with local email and password sign-in", async ({ page }) => {
     await page.goto("/login");
 
     await expect(page.getByRole("heading", { level: 1, name: "Welcome back" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
-    await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Email me a Sign-In Link" })).toBeVisible();
+    await expect(page.getByText("Sign in to your self-hosted workspace")).toBeVisible();
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
   });
 
-  test("shows client-side validation when email sign-in is empty", async ({ page }) => {
+  test("shows client-side validation when login fields are empty", async ({ page }) => {
     await page.goto("/login");
-    await page.getByRole("button", { name: "Email me a Sign-In Link" }).click();
+    await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByText("Enter an email address first.")).toBeVisible();
+
+    await page.getByLabel("Email").fill("owner@example.com");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("Enter a password first.")).toBeVisible();
   });
 
   test("shows the auth callback error toast on the login page", async ({ page }) => {
@@ -32,9 +36,9 @@ test.describe("public pages", () => {
     await expect(page.getByText("Could not complete sign-in.")).toBeVisible();
   });
 
-  test("shows the email confirmation error toast on the login page", async ({ page }) => {
+  test("shows a generic auth error toast for old callback error URLs", async ({ page }) => {
     await page.goto("/login?error=email_confirm_error");
-    await expect(page.getByText("Could not verify the email sign-in link.")).toBeVisible();
+    await expect(page.getByText("Could not complete sign-in.")).toBeVisible();
   });
 
   test("renders the 404 page for an unknown route", async ({ page }) => {

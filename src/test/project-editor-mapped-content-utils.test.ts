@@ -604,7 +604,7 @@ describe("project editor post field states", () => {
 });
 
 describe("project editor main field specs", () => {
-  it("builds the default self-host title and content fields for non-mapped-content projects", () => {
+  it("builds the default self-host title and content fields for non-mapped projects", () => {
     expect(
       getProjectEditorMainFieldSpecs({
         contentRuntime: null,
@@ -630,7 +630,7 @@ describe("project editor main field specs", () => {
     ]);
   });
 
-  it("keeps only visible title and content field contracts for mapped-content projects", () => {
+  it("keeps only visible title and content field contracts for mapped projects", () => {
     expect(
       getProjectEditorMainFieldSpecs({
         contentRuntime: createMappedContentRuntime({
@@ -1098,7 +1098,7 @@ describe("project editor mapped-content setup copy", () => {
     });
   });
 
-  it("uses self-host wording for not-ready project states", () => {
+  it("uses product wording for not-ready project states", () => {
     expect(getProjectEditorWorkspaceNotReadyCopy("mapping_draft")).toEqual({
       description: "Finish content mapping before the editor can load content.",
       title: "Project mapping is not ready yet",

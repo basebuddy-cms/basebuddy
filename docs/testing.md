@@ -35,7 +35,7 @@ pnpm run perf:bundles
 
 ## Schema-Zoo Smoke
 
-The schema-zoo scripts seed varied content-plane schemas and verify app behavior across direct columns, JSON paths, array indexes, helper rows, value-match relations, join-table relations, read-only views, media, and files.
+The schema-zoo scripts seed varied database schemas and verify app behavior across direct columns, JSON paths, array indexes, helper rows, value-match relations, join-table relations, read-only views, media, and files.
 
 ```sh
 BASEBUDDY_SCHEMA_ZOO_RUN_KEY=local-zoo node --import tsx ./scripts/smoke-schema-zoo.ts

@@ -48,7 +48,7 @@ const createBaseProps = (
 });
 
 describe("ProjectSettingsView mapping tab", () => {
-  it("uses self-host wording in the settings intro", () => {
+  it("uses product wording in the settings intro", () => {
     const props = createBaseProps({
       activeSettingsTab: "general",
     });
@@ -57,12 +57,12 @@ describe("ProjectSettingsView mapping tab", () => {
 
     expect(
       screen.getByText(
-        "Manage workspace details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
+        "Manage project details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
       ),
     ).toBeInTheDocument();
   });
 
-  it("renders section-specific mapping actions for mapped content projects", () => {
+  it("renders section-specific mapping actions for mapped projects", () => {
     const props = createBaseProps();
 
     render(<ProjectSettingsView {...props} />);

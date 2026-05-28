@@ -2,11 +2,10 @@
   <img src="./docs/assets/basebuddy-wordmark-script.png" alt="BaseBuddy" width="360" />
 </p>
 
-<h1 align="center">Open-Source CMS That Speaks Supabase Natively</h1>
+<h1 align="center">Self-Hosted Editor For Existing Postgres/Supabase Schemas</h1>
 
 <p align="center">
-  BaseBuddy is an open-source Supabase CMS and self-hosted editor for existing Supabase and Postgres databases.
-  It works with the tables you already have, then turns saved mappings into a clean, WordPress-like editor for your team.
+  BaseBuddy maps the tables you already have, then gives your team a clean editor without reshaping your database around a CMS.
 </p>
 
 <p align="center">
@@ -33,26 +32,24 @@
 
 ## What BaseBuddy Is
 
-BaseBuddy is a Supabase CMS for teams that already have content in Postgres or Supabase and want a real editor without rebuilding their database around a CMS.
+BaseBuddy is a self-hosted editor for existing Postgres or Supabase content databases.
 
-You install BaseBuddy, connect it to your database, map your existing tables and fields, and start editing. The saved mapping is the source of truth. Your database stays yours.
+You run one BaseBuddy app, create `basebuddy.config.json` from `/onboarding` or the CLI, create projects, map existing tables, and start editing. The saved mapping is the runtime source of truth. Your content database stays yours.
 
-BaseBuddy is especially useful when you want:
+BaseBuddy is useful when you want:
 
 - a clean editor for existing posts, pages, docs, guides, or content tables;
-- a WordPress-like editing experience backed by your own Supabase or Postgres tables;
-- a minimal TipTap editor that can work with Markdown and HTML storage formats;
-- media and file management through Supabase Storage or S3-compatible buckets;
+- a WordPress-like editing experience backed by your own Postgres/Supabase tables;
+- a TipTap editor that can work with Markdown and HTML storage formats;
+- media and file management through mapped Supabase Storage or S3-compatible buckets;
 - SEO fields, redirects, slugs, authors, categories, tags, and publishing workflows;
 - role-based and user-specific permissions;
 - an admin UI that respects the shape of your current schema.
 
 ## What BaseBuddy Does Not Do
 
-BaseBuddy is careful around your production database.
-
 - It does not rename your tables.
-- It does not reshape your schema during normal editing.
+- It does not reshape your schema during normal setup or editing.
 - It does not store per-project database credentials in project rows.
 - It does not silently publish, unpublish, or archive content when you click Save.
 - It does not rewrite unchanged fields just because a post was opened.
@@ -64,7 +61,8 @@ BaseBuddy is careful around your production database.
 
 ```mermaid
 flowchart LR
-  Database["Your Supabase/Postgres database"] --> Mapping["Saved BaseBuddy mapping"]
+  Config["basebuddy.config.json"] --> Mapping["Saved BaseBuddy mapping"]
+  Database["Your Postgres/Supabase content database"] --> Mapping
   Mapping --> Runtime["Storage-first runtime"]
   Runtime --> Editor["BaseBuddy editor"]
   Editor --> Dirty["Dirty-field save"]
@@ -77,9 +75,7 @@ BaseBuddy separates three ideas:
 - **Semantic role**: optional meaning like title, content, slug, status, author, category, tags, or featured image.
 - **UI**: the editor control selected from the storage contract, then refined by semantic role.
 
-It also keeps the **control plane** and **content plane** separate in the runtime model. The control plane stores BaseBuddy projects, members, roles, invitations, mappings, and sessions. The content plane is your existing database schema and storage buckets.
-
-That is why BaseBuddy can support flexible schemas without pretending every database looks like the same CMS template.
+`basebuddy.config.json` stores BaseBuddy users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar layout. Database URLs, service keys, signing secrets, and storage access keys stay in `.env` or deployment environment variables.
 
 ## Quick Start
 
@@ -87,8 +83,7 @@ You need:
 
 - Node.js 22 recommended;
 - `pnpm@10.32.1`;
-- a Supabase/Postgres project for BaseBuddy setup data;
-- a Supabase/Postgres database or schema with content you want to edit.
+- a Postgres/Supabase database with content you want to edit.
 
 Clone and install:
 
@@ -99,64 +94,24 @@ pnpm install
 pnpm dev
 ```
 
-The dev server runs on:
-
-```text
-http://localhost:8080
-```
-
-Open onboarding:
+Open:
 
 ```text
 http://localhost:8080/onboarding
 ```
 
-The onboarding page is designed to work before `.env` exists. It helps you choose an install shape, copy the right env values, apply the BaseBuddy migration, configure Supabase Auth, and verify that the install is ready.
+Finish the three onboarding screens: connect the database with env values from `.env.example`, create the owner account, and let setup checks run. BaseBuddy writes `process.cwd()/basebuddy.config.json`, then you sign in and create your first project.
 
-## Install Shape
-
-BaseBuddy supports two common setups.
-
-```mermaid
-flowchart TB
-  subgraph Same["Same-project install"]
-    One["One Supabase/Postgres project"]
-    One --> ControlA["BaseBuddy tables"]
-    One --> ContentA["Your content tables"]
-  end
-
-  subgraph Split["Split-project install"]
-    ControlB["Control project"] --> BaseBuddyTables["BaseBuddy tables"]
-    ContentB["Content project"] --> ExistingTables["Your content tables"]
-  end
-```
-
-Use a **same-project install** when you want the simplest setup.
-
-Use a **split-project install** when you want BaseBuddy's control tables separate from the database that stores your content.
-
-The generated env values come from `/onboarding`, but the examples are here:
-
-- [`.env.example`](./.env.example)
-- [`.env.same-project.example`](./.env.same-project.example)
-- [`.env.split-project.example`](./.env.split-project.example)
-- [`.env.playwright.example`](./.env.playwright.example)
-
-After editing `.env`, restart the app so Next.js picks up the new values.
-
-## Apply The Migration
-
-BaseBuddy needs its own control-plane tables for projects, members, roles, invitations, mappings, and edit sessions.
-
-Apply the baseline migration to the BaseBuddy control database:
+Agents or operators can use the CLI instead:
 
 ```sh
-psql "$BASEBUDDY_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20260420130000_basebuddy_self_host_baseline.sql
+pnpm basebuddy setup \
+  --owner-email "owner@example.com" \
+  --owner-name "Owner User" \
+  --owner-password "replace-with-a-strong-password"
 ```
 
-For split-project installs, apply it to `BASEBUDDY_CONTROL_DATABASE_URL` instead.
-
-You can also paste the SQL into the Supabase SQL editor.
+After setup, the CLI can also manage config-backed users, projects, members, invites, permissions, mapping revisions, sidebar layout, and storage mapping metadata. Use `pnpm basebuddy --help` or the [CLI docs](./docs/cli.md).
 
 ## First Project
 
@@ -182,15 +137,17 @@ pnpm build
 pnpm start
 ```
 
-`pnpm start` serves the app on port `8080`.
-
 Before exposing BaseBuddy publicly:
 
-- configure Supabase Auth redirect URLs;
-- run the setup checker;
+- run `pnpm basebuddy doctor`;
+- confirm required secrets are set in env, not in the repo;
+- confirm `basebuddy.config.json` exists on the server and is ignored by git;
+- confirm the server has persistent writable storage for `basebuddy.config.json`;
 - put the app behind HTTPS;
 - set request body limits that match your upload policy;
 - use a shared upstream rate limiter if you run multiple app instances.
+
+BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys unless you provide durable writable storage for the app root. UI changes to projects, mappings, permissions, and sidebar layout write to `basebuddy.config.json` on the running server.
 
 Useful checks:
 
@@ -215,22 +172,7 @@ Start with:
 - [WordPress-like editor for Supabase](https://basebuddycms.com/docs/wordpress-like-editor-for-supabase)
 - [Configuration](./docs/configuration.md)
 - [Onboarding](./docs/onboarding.md)
+- [CLI](./docs/cli.md)
 - [Projects and mapping](./docs/projects-and-mapping.md)
 - [Permissions](./docs/permissions.md)
 - [Storage and media](./docs/storage-and-media.md)
-- [Storage UI matrix](./docs/storage-ui-matrix.md)
-- [Caps and rate limits](./docs/caps-and-rate-limits.md)
-- [Deployment](./docs/deployment.md)
-- [Troubleshooting](./docs/troubleshooting.md)
-
-## Contributing
-
-Contributions are welcome. Please read [Contributing](./docs/contributing.md) before opening a pull request.
-
-If you are changing mapping behavior, runtime storage semantics, permissions, setup env assumptions, or route ownership, update the relevant docs and tests in the same change.
-
-## License
-
-BaseBuddy is licensed under AGPL-3.0-or-later. See [LICENSE.md](./LICENSE.md).
-
-If you modify BaseBuddy and let users interact with it over a network, the AGPL requires that those users can receive the corresponding source code for your modified version.

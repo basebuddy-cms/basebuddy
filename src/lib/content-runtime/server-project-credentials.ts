@@ -1,22 +1,22 @@
 import "server-only";
 
 import {
-  getInstallContentSupabaseServiceRoleKey,
-  getInstallS3CompatibleStorageCredentialStatus,
-  getInstallS3CompatibleStorageCredentials,
-} from "@/lib/self-host/install-runtime";
+  getConfigContentStorageServiceKey,
+  getConfigS3CompatibleStorageCredentialStatus,
+  getConfigS3CompatibleStorageCredentials,
+} from "@/lib/basebuddy-config/install";
 
 export const getContentStorageServiceKey = async (_projectId: string) =>
-  getInstallContentSupabaseServiceRoleKey();
+  getConfigContentStorageServiceKey();
 
 export const getContentMediaStorageCredentialStatus = async (_projectId: string) =>
-  getInstallS3CompatibleStorageCredentialStatus("media");
+  getConfigS3CompatibleStorageCredentialStatus();
 
 export const getContentFilesStorageCredentialStatus = async (_projectId: string) =>
-  getInstallS3CompatibleStorageCredentialStatus("files");
+  getConfigS3CompatibleStorageCredentialStatus();
 
 export const getContentS3CompatibleMediaCredentials = async (_projectId: string) =>
-  getInstallS3CompatibleStorageCredentials("media");
+  getConfigS3CompatibleStorageCredentials();
 
 export const getContentS3CompatibleFilesCredentials = async (_projectId: string) =>
-  getInstallS3CompatibleStorageCredentials("files");
+  getConfigS3CompatibleStorageCredentials();

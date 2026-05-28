@@ -1,150 +1,58 @@
 # Configuration
 
-BaseBuddy uses environment variables for install-level configuration. Project records store mappings and project state, not database passwords, Supabase service keys, or S3 secrets.
+BaseBuddy app state lives in one root config file:
 
-## Topologies
-
-BaseBuddy supports two env shapes.
-
-```mermaid
-flowchart LR
-  subgraph Unified["Same-project"]
-    Same["One Supabase/Postgres project"] --> SameControl["BaseBuddy control tables"]
-    Same --> SameContent["Content tables"]
-  end
-
-  subgraph Split["Split-project"]
-    Control["Control project"] --> ControlTables["BaseBuddy control tables"]
-    Content["Content project/database"] --> ContentTables["Content tables"]
-  end
+```text
+process.cwd()/basebuddy.config.json
 ```
 
-Do not mix same-project and split-project env names. The app rejects mixed configuration to prevent accidental cross-project reads or writes.
+Onboarding and CLI setup create and update this file. It stores install metadata, local users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar settings.
 
-## Same-Project Env
+Do not commit `basebuddy.config.json`.
 
-Use this when one Supabase/Postgres project contains both BaseBuddy control data and editable content.
+Audit events live beside it in:
+
+```text
+process.cwd()/basebuddy.audit.jsonl
+```
+
+Do not commit the audit log. It records sign-in, sign-out, and local user changes.
+
+## Required Env
+
+Credentials and signing secrets belong in `.env` or deployment environment variables:
 
 ```sh
-BASEBUDDY_SUPABASE_URL=https://your-project-ref.supabase.co
-BASEBUDDY_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
-BASEBUDDY_SUPABASE_SECRET_KEY=your-secret-key
-BASEBUDDY_DATABASE_URL=postgresql://...
-BASEBUDDY_AUTH_PROVIDERS=password,magic_link,google,github
+BASEBUDDY_AUTH_SECRET=
+BASEBUDDY_CONTENT_DATABASE_URL=
 ```
 
-## Split-Project Env
-
-Use this when BaseBuddy control data and content data live in separate projects or databases.
+Only needed if you want images or files in BaseBuddy:
 
 ```sh
-BASEBUDDY_CONTROL_SUPABASE_URL=https://your-control-project-ref.supabase.co
-BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY=your-control-publishable-key
-BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY=your-control-secret-key
-BASEBUDDY_CONTROL_DATABASE_URL=postgresql://...
+# For Supabase media bucket storage.
+BASEBUDDY_SUPABASE_URL=
+BASEBUDDY_SUPABASE_PUBLISHABLE_KEY=
+BASEBUDDY_SUPABASE_SECRET_KEY=
 
-BASEBUDDY_CONTENT_SUPABASE_URL=https://your-content-project-ref.supabase.co
-BASEBUDDY_CONTENT_SUPABASE_PUBLISHABLE_KEY=your-content-publishable-key
-BASEBUDDY_CONTENT_SUPABASE_SECRET_KEY=your-content-secret-key
-BASEBUDDY_CONTENT_DATABASE_URL=postgresql://...
-
-BASEBUDDY_AUTH_PROVIDERS=password,magic_link,google,github
+# For S3 bucket storage.
+BASEBUDDY_S3_ACCESS_KEY_ID=
+BASEBUDDY_S3_SECRET_ACCESS_KEY=
 ```
 
-## Runtime Topology Override
+## Public Env
 
-Normally BaseBuddy infers topology from the env values. You can set:
-
-```sh
-BASEBUDDY_RUNTIME_TOPOLOGY=unified
-```
-
-or:
-
-```sh
-BASEBUDDY_RUNTIME_TOPOLOGY=split
-```
-
-Only use this when you know the inferred topology is not enough for your deployment.
-
-## Auth Providers
-
-Supported values:
-
-- `password`
-- `magic_link`
-- `google`
-- `github`
-
-Comma-separate enabled providers:
-
-```sh
-BASEBUDDY_AUTH_PROVIDERS=password,magic_link,google
-```
-
-If the variable is omitted, BaseBuddy enables all supported provider buttons.
-
-## Site Indexing
-
-BaseBuddy defaults to noindex headers and robots rules.
-
-To allow indexing:
-
-```sh
-NEXT_PUBLIC_SITE_INDEXABLE=true
-```
-
-Most self-host admin installs should keep indexing disabled.
-
-## Branding
+Optional public env values:
 
 ```sh
 NEXT_PUBLIC_BASEBUDDY_APP_NAME=BaseBuddy
 NEXT_PUBLIC_BASEBUDDY_DOCS_URL=https://basebuddycms.com/docs
 NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL=https://basebuddycms.com/support
+NEXT_PUBLIC_SITE_INDEXABLE=false
 ```
 
-`NEXT_PUBLIC_BASEBUDDY_APP_NAME` changes the app name shown in the UI and metadata.
+## Content And Storage
 
-`NEXT_PUBLIC_BASEBUDDY_DOCS_URL` and `NEXT_PUBLIC_BASEBUDDY_SUPPORT_URL` let a self-host install point users to the right documentation and support destination for that deployment. Leave them unset to use the public BaseBuddy docs and support pages at `basebuddycms.com`.
+The database URL and optional Supabase/S3 storage credentials are env values. They are install settings, not per-project rows or mapping rows.
 
-Set these before building the app so the public Next.js env values are available to the browser bundle.
-
-## Session Pooler TLS
-
-Hosted Supabase pooler connections often work without a certificate file. If your environment requires strict root certificate verification, configure a certificate file:
-
-```sh
-BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE_FILE=./certs/control-session-pooler-root.pem
-BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE_FILE=./certs/content-session-pooler-root.pem
-```
-
-For local Supabase, add `?sslmode=disable` to the database URL.
-
-## S3-Compatible Storage
-
-Shared credentials:
-
-```sh
-BASEBUDDY_S3_ACCESS_KEY_ID=
-BASEBUDDY_S3_SECRET_ACCESS_KEY=
-```
-
-Separate media/files credentials:
-
-```sh
-BASEBUDDY_MEDIA_S3_ACCESS_KEY_ID=
-BASEBUDDY_MEDIA_S3_SECRET_ACCESS_KEY=
-BASEBUDDY_FILES_S3_ACCESS_KEY_ID=
-BASEBUDDY_FILES_S3_SECRET_ACCESS_KEY=
-```
-
-Credential pairs must be complete. Setting only an access key or only a secret key is treated as invalid.
-
-## Verification
-
-```sh
-pnpm setup:check
-```
-
-The checker prints redacted values only. Database passwords, service-role keys, certificates, and S3 secrets are never printed in full.
+BaseBuddy never changes the user content schema during normal setup.

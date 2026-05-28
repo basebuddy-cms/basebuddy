@@ -5,16 +5,14 @@ import {
   getProjectsPageBootstrap,
 } from "@/lib/control-plane/server";
 import {
-  getControlPlaneSchemaSetupSection,
-  getInstallSetupStatus,
-  isInstallSetupReady,
-} from "@/lib/self-host/install-runtime";
+  getBaseBuddyConfigSetupStatus,
+  isBaseBuddyConfigSetupReady,
+} from "@/lib/basebuddy-config/setup";
 
 export default async function HomePage() {
-  const controlPlaneSchemaSection = await getControlPlaneSchemaSetupSection();
-  const setupStatus = getInstallSetupStatus({ controlPlaneSchemaSection });
+  const setupStatus = await getBaseBuddyConfigSetupStatus();
 
-  if (!isInstallSetupReady(setupStatus)) {
+  if (!isBaseBuddyConfigSetupReady(setupStatus)) {
     return redirect("/onboarding");
   }
 

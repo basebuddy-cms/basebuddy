@@ -1,95 +1,191 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("react", () => ({
   cache: <T extends (...args: never[]) => Promise<unknown>>(fn: T) => fn,
 }));
 
-const { adminRpcMock, createAdminClientMock, createClientMock, rpcMock } = vi.hoisted(() => ({
+const { createAdminClientMock, createClientMock } = vi.hoisted(() => ({
   createAdminClientMock: vi.fn(),
   createClientMock: vi.fn(),
-  adminRpcMock: vi.fn(),
-  rpcMock: vi.fn(),
 }));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: createClientMock,
-}));
 
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: createAdminClientMock,
-}));
+
+import { getBaseBuddyConfigPath } from "@/lib/basebuddy-config/paths";
+import { createDefaultBaseBuddyConfig } from "@/lib/basebuddy-config/schema";
+import {
+  createDefaultContentMappingConfig,
+  normalizeContentProjectMapping,
+} from "@/lib/content-runtime/mapping";
+
+const fixedNow = "2026-05-28T00:00:00.000Z";
+const authSecret = "local-auth-secret-value-with-32-plus-chars";
 
 describe("server project mapping access", () => {
-  beforeEach(() => {
+  const originalCwd = process.cwd();
+  let tempDir: string;
+
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    tempDir = await mkdtemp(join(tmpdir(), "basebuddy-server-project-mapping-"));
+    process.chdir(tempDir);
 
-    createClientMock.mockResolvedValue({
-      rpc: rpcMock,
+    const mappingConfig = createDefaultContentMappingConfig();
+    mappingConfig.entities.posts.status = "mapped";
+    mappingConfig.entities.posts.source = {
+      kind: "table",
+      primaryKey: "id",
+      schema: "public",
+      table: "posts",
+    };
+    const mapping = normalizeContentProjectMapping({
+      bindingId: "project-1",
+      bindingMode: "mapped_content",
+      bindingStatus: "ready",
+      mappingConfig,
+      revisionId: "revision-1",
+      revisionVersion: 1,
     });
-    createAdminClientMock.mockReturnValue({
-      rpc: adminRpcMock,
+
+    await writeFile(
+      getBaseBuddyConfigPath(),
+      JSON.stringify(
+        {
+          ...createDefaultBaseBuddyConfig({
+            now: fixedNow,
+          }),
+          projects: [
+            {
+              createdAt: fixedNow,
+              createdBy: "user-1",
+              id: "project-1",
+              mapping,
+              mappingRevisions: [
+                {
+                  bindingStatus: "ready",
+                  createdAt: fixedNow,
+                  id: "revision-1",
+                  mappingConfig,
+                  source: "manual",
+                  version: 1,
+                },
+              ],
+              members: [],
+              name: "Demo Project",
+              sidebar: null,
+              sidebarRevisions: [],
+              slug: "demo-project",
+              status: "active",
+              updatedAt: fixedNow,
+              websiteUrl: null,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    createClientMock.mockRejectedValue(new Error("Mapping reads must not use the Supabase server client."));
+    createAdminClientMock.mockImplementation(() => {
+      throw new Error("Mapping reads must not use the Supabase admin client.");
     });
   });
 
-  it("uses the runtime mapping RPC when server code does not need mapping-page permission", async () => {
-    adminRpcMock.mockResolvedValue({
-      data: [
-        {
-          binding_id: "binding-1",
-          binding_mode: "mapped_content",
-          binding_status: "ready",
-          canonical_schema_version: 1,
-          install_config: {},
-          mapping_config: { version: 1 },
-          revision_created_at: "2026-04-02T00:00:00.000Z",
-          revision_id: "revision-1",
-          revision_source: "manual",
-          revision_version: 1,
-          scope_config: {},
-          scope_mode: "database",
-          storage_bucket: null,
-        },
-      ],
-      error: null,
-    });
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await rm(tempDir, { force: true, recursive: true });
+  });
 
+  it("uses the config mapping for runtime reads that do not need mapping-page permission", async () => {
     const { loadStoredContentProjectMapping } = await import(
       "@/lib/content-runtime/server-content-mapping-state"
     );
 
-    await loadStoredContentProjectMapping({
-      context: {
+    await expect(
+      loadStoredContentProjectMapping({
+        context: {
+          projectId: "project-1",
+        },
+        enforceReadPermission: false,
         projectId: "project-1",
+      }),
+    ).resolves.toMatchObject({
+      mapping: {
+        bindingId: "project-1",
+        bindingMode: "mapped_content",
+        bindingStatus: "ready",
+        revisionId: "revision-1",
+        revisionVersion: 1,
       },
-      enforceReadPermission: false,
-      projectId: "project-1",
     });
-
-    expect(adminRpcMock).toHaveBeenCalledWith("get_project_content_runtime_mapping", {
-      p_project_id: "project-1",
-    });
+    expect(createAdminClientMock).not.toHaveBeenCalled();
+    expect(createClientMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to a draft runtime mapping when the lightweight runtime RPC is unavailable", async () => {
-    adminRpcMock.mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message:
-          "Could not find the function public.get_project_content_runtime_mapping(p_project_id) in the schema cache",
-      },
-    });
-    rpcMock.mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message:
-          "Could not find the function public.get_project_content_mapping(p_project_id) in the schema cache",
-      },
-    });
+  it("uses the config mapping after mapping read access checks pass", async () => {
+    const ensureReadAccess = vi.fn();
+    const { loadStoredContentProjectMapping } = await import(
+      "@/lib/content-runtime/server-content-mapping-state"
+    );
 
+    await expect(
+      loadStoredContentProjectMapping({
+        context: {
+          projectId: "project-1",
+        },
+        enforceReadPermission: true,
+        ensureReadAccess,
+        projectId: "project-1",
+      }),
+    ).resolves.toMatchObject({
+      mapping: {
+        revisionId: "revision-1",
+      },
+    });
+    expect(ensureReadAccess).toHaveBeenCalledWith({
+      projectId: "project-1",
+    });
+    expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a draft config mapping when no mapping revision exists yet", async () => {
+    await writeFile(
+      getBaseBuddyConfigPath(),
+      JSON.stringify(
+        {
+          ...createDefaultBaseBuddyConfig({
+            now: fixedNow,
+          }),
+          projects: [
+            {
+              createdAt: fixedNow,
+              createdBy: "user-1",
+              id: "project-1",
+              mapping: null,
+              mappingRevisions: [],
+              members: [],
+              name: "Demo Project",
+              sidebar: null,
+              sidebarRevisions: [],
+              slug: "demo-project",
+              status: "active",
+              updatedAt: fixedNow,
+              websiteUrl: null,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
     const { loadStoredContentProjectMapping } = await import(
       "@/lib/content-runtime/server-content-mapping-state"
     );
@@ -108,46 +204,8 @@ describe("server project mapping access", () => {
         bindingMode: "mapped_content",
         bindingStatus: "draft",
         revisionId: null,
+        revisionVersion: null,
       },
-    });
-  });
-
-  it("uses the mapping-read RPC when the mapping page needs full mapping access checks", async () => {
-    rpcMock.mockResolvedValue({
-      data: [
-        {
-          binding_id: "binding-1",
-          binding_mode: "mapped_content",
-          binding_status: "ready",
-          canonical_schema_version: 1,
-          install_config: {},
-          mapping_config: { version: 1 },
-          revision_created_at: "2026-04-02T00:00:00.000Z",
-          revision_id: "revision-1",
-          revision_source: "manual",
-          revision_version: 1,
-          scope_config: {},
-          scope_mode: "database",
-          storage_bucket: null,
-        },
-      ],
-      error: null,
-    });
-
-    const { loadStoredContentProjectMapping } = await import(
-      "@/lib/content-runtime/server-content-mapping-state"
-    );
-
-    await loadStoredContentProjectMapping({
-      context: {
-        projectId: "project-1",
-      },
-      enforceReadPermission: true,
-      projectId: "project-1",
-    });
-
-    expect(rpcMock).toHaveBeenCalledWith("get_project_content_mapping", {
-      p_project_id: "project-1",
     });
   });
 });

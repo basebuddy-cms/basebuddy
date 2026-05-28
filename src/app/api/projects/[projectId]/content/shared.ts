@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
 import { requireAuthenticatedProjectApiUser } from "@/lib/api/project-api-auth";
 import {
-  getContentPlaneDegradedDatabaseMessage,
-  isContentPlaneDatabaseTimeoutLikeError,
-} from "@/lib/content-runtime/content-plane-db-resilience";
+  getContentDegradedDatabaseMessage,
+  isContentDatabaseTimeoutLikeError,
+} from "@/lib/content-runtime/content-database-resilience";
 import {
   getContentAdapterOperationErrorStatus,
   isContentAdapterOperationError,
@@ -61,8 +61,8 @@ export const getContentRouteErrorMessage = (error: unknown) => {
     return "The app connection is no longer valid. Update setup and try again.";
   }
 
-  if (isContentPlaneDatabaseTimeoutLikeError(message)) {
-    return getContentPlaneDegradedDatabaseMessage();
+  if (isContentDatabaseTimeoutLikeError(message)) {
+    return getContentDegradedDatabaseMessage();
   }
 
   const pgError = error as { code?: string; column?: string };
@@ -84,11 +84,11 @@ export const getContentRouteErrorMessage = (error: unknown) => {
   }
 
   if (pgError.code === "42P01") {
-    return "This project's content setup is out of date. Review the setup and try again.";
+    return "This project's mapping is out of date. Review the mapping and try again.";
   }
 
   if (pgError.code === "42703") {
-    return "This project's content setup is out of date. Review the setup and try again.";
+    return "This project's mapping is out of date. Review the mapping and try again.";
   }
 
   return getProductionErrorMessage(message, "Could not process the content request right now.");
@@ -103,7 +103,7 @@ export const getContentRouteErrorStatus = (message: string) =>
         ? 404
         : /temporarily switched this project into a degraded state|responding too slowly|having trouble reaching this project's content right now/i.test(message)
           ? 503
-          : /Select a post|requires Session Pooler|content setup is out of date|field ".+" is required|invalid type|too long|does not satisfy the database constraints/i.test(
+        : /Select a post|requires Session Pooler|mapping is out of date|field ".+" is required|invalid type|too long|does not satisfy the database constraints/i.test(
               message,
             )
           ? 400

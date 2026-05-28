@@ -3,13 +3,11 @@ import { redirect } from "next/navigation";
 
 import { LoginForm } from "./login-form";
 import { getOptionalAuthenticatedUserWithAccount } from "@/lib/control-plane/server";
-import { getInstallAuthProviders } from "@/lib/self-host/auth-providers";
 import {
-  getControlPlaneSchemaSetupSection,
-  getInstallSetupStatus,
-  isInstallSetupReady,
-} from "@/lib/self-host/install-runtime";
-import { getSafeNextPath } from "@/lib/supabase/auth";
+  getBaseBuddyConfigSetupStatus,
+  isBaseBuddyConfigSetupReady,
+} from "@/lib/basebuddy-config/setup";
+import { getSafeNextPath } from "@/lib/auth/redirects";
 
 type LoginRouteSearchParams = Record<string, string | string[] | undefined>;
 
@@ -36,11 +34,27 @@ const getLoginRedirectPath = (value: string | null | undefined) => {
   return nextPath;
 };
 
-export default async function LoginRoute({ searchParams }: LoginRouteProps = {}) {
-  const controlPlaneSchemaSection = await getControlPlaneSchemaSetupSection();
-  const setupStatus = getInstallSetupStatus({ controlPlaneSchemaSection });
+const getDemoAccess = () => {
+  if (process.env.BASEBUDDY_DEMO_LOGIN_ENABLED !== "1") {
+    return null;
+  }
 
-  if (!isInstallSetupReady(setupStatus)) {
+  const password = process.env.BASEBUDDY_DEMO_USER_PASSWORD?.trim();
+
+  if (!password) {
+    return null;
+  }
+
+  return {
+    email: process.env.BASEBUDDY_DEMO_USER_EMAIL?.trim() || "demo@basebuddycms.com",
+    password,
+  };
+};
+
+export default async function LoginRoute({ searchParams }: LoginRouteProps = {}) {
+  const setupStatus = await getBaseBuddyConfigSetupStatus();
+
+  if (!isBaseBuddyConfigSetupReady(setupStatus)) {
     redirect("/onboarding");
   }
 
@@ -54,7 +68,7 @@ export default async function LoginRoute({ searchParams }: LoginRouteProps = {})
 
   return (
     <LoginForm
-      enabledProviders={getInstallAuthProviders()}
+      demoAccess={getDemoAccess()}
       initialEmail={getSingleSearchParamValue(resolvedSearchParams, "email")?.trim() ?? ""}
       initialError={getSingleSearchParamValue(resolvedSearchParams, "error") ?? null}
       nextPath={nextPath}

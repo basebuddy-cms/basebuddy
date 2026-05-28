@@ -10,6 +10,7 @@ export type ProjectPermissionKey =
   | "content.write.authored"
   | "mapping.read"
   | "mapping.write"
+  | "member.invite"
   | "member.manage"
   | "member.read"
   | "project.delete"

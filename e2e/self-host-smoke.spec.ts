@@ -16,7 +16,7 @@ test.describe("self-host smoke", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Welcome back" })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole("button", { name: "Email me a Sign-In Link" })).toBeVisible({
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible({
       timeout: 30_000,
     });
 
@@ -50,7 +50,7 @@ test.describe("self-host smoke", () => {
     await expect(page).toHaveURL(new RegExp(`/projects/${projectSlug}(?:/posts)?$`), {
       timeout: 45_000,
     });
-    await expect(page.getByRole("button", { name: "Set up Posts" })).toBeVisible({
+    await expect(page.getByRole("button", { name: "Map Posts" })).toBeVisible({
       timeout: 30_000,
     });
   });
@@ -66,7 +66,7 @@ test.describe("self-host smoke", () => {
     await expect(page.getByRole("main").getByText("Content Mapping").first()).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole("button", { name: "Open Posts setup" })).toBeVisible({
+    await expect(page.getByRole("button", { name: "Open Posts mapping" })).toBeVisible({
       timeout: 30_000,
     });
 

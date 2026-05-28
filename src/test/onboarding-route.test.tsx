@@ -5,16 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 globalThis.React = React;
 
 const {
-  getControlPlaneSchemaSetupSectionMock,
-  getInstallSetupStatusMock,
+  getBaseBuddyConfigSetupStatusMock,
   getOptionalAuthenticatedUserWithAccountMock,
-  isInstallSetupReadyMock,
+  isBaseBuddyConfigSetupReadyMock,
   redirectMock,
 } = vi.hoisted(() => ({
-  getControlPlaneSchemaSetupSectionMock: vi.fn(),
-  getInstallSetupStatusMock: vi.fn(),
+  getBaseBuddyConfigSetupStatusMock: vi.fn(),
   getOptionalAuthenticatedUserWithAccountMock: vi.fn(),
-  isInstallSetupReadyMock: vi.fn(),
+  isBaseBuddyConfigSetupReadyMock: vi.fn(),
   redirectMock: vi.fn(),
 }));
 
@@ -32,10 +30,9 @@ vi.mock("@/components/projects/onboarding-setup-view", () => ({
   ),
 }));
 
-vi.mock("@/lib/self-host/install-runtime", () => ({
-  getControlPlaneSchemaSetupSection: getControlPlaneSchemaSetupSectionMock,
-  getInstallSetupStatus: getInstallSetupStatusMock,
-  isInstallSetupReady: isInstallSetupReadyMock,
+vi.mock("@/lib/basebuddy-config/setup", () => ({
+  getBaseBuddyConfigSetupStatus: getBaseBuddyConfigSetupStatusMock,
+  isBaseBuddyConfigSetupReady: isBaseBuddyConfigSetupReadyMock,
 }));
 
 vi.mock("@/lib/control-plane/server", () => ({
@@ -45,18 +42,13 @@ vi.mock("@/lib/control-plane/server", () => ({
 describe("onboarding route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getControlPlaneSchemaSetupSectionMock.mockResolvedValue({
-      checks: [],
-      description: "Ready",
-      status: "ready",
-      title: "BaseBuddy tables",
-    });
-    getInstallSetupStatusMock.mockReturnValue({
+    getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
+      configPath: "/repo/basebuddy.config.json",
       sections: [],
-      topology: "unified",
+      topology: "config-file",
     });
     getOptionalAuthenticatedUserWithAccountMock.mockResolvedValue({ account: null, user: null });
-    isInstallSetupReadyMock.mockReturnValue(true);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(true);
   });
 
   it("renders a read-only setup summary for signed-out visitors after setup is ready", async () => {
@@ -97,7 +89,7 @@ describe("onboarding route", () => {
   });
 
   it("renders setup wizard while setup is incomplete", async () => {
-    isInstallSetupReadyMock.mockReturnValue(false);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(false);
     const OnboardingRoute = (await import("@/app/onboarding/page")).default;
 
     render(await OnboardingRoute());

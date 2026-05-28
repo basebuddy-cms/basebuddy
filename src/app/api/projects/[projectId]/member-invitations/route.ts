@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
-  type AuthenticatedProjectApiRouteContext,
   withAuthenticatedPreparedProjectRoute,
 } from "@/lib/api/project-api-auth";
 import {
@@ -11,21 +10,17 @@ import {
 } from "@/lib/api/project-access-route-errors";
 import { enforceRateLimit, parseJsonBody } from "@/lib/api/request-guards";
 import {
-  buildProjectMemberInvitationPath,
-  getProjectMemberInvitationStatus,
   type CreateProjectMemberInvitationPayload,
   type ProjectMemberInvitationsPayload,
 } from "@/lib/control-plane/member-invitations";
 import { createProjectMemberInvitationToken } from "@/lib/control-plane/member-invitations-server";
 import {
   DEFAULT_PROJECT_ROLE_DEFINITIONS,
-  normalizeProjectMemberAuthorScopeCanPublish,
-  type ProjectMemberAuthorScope,
 } from "@/lib/control-plane/members";
 import {
-  APP_SETUP_REQUIRED_MESSAGE,
-  isControlPlaneSetupError,
-} from "@/lib/control-plane/server";
+  createConfigProjectMemberInvitation,
+  listConfigProjectMemberInvitations,
+} from "@/lib/basebuddy-config/projects";
 
 export const runtime = "nodejs";
 const PROJECT_INVITATIONS_PAGE_SIZE = 100;
@@ -48,92 +43,23 @@ const logProjectMemberInvitationRouteError = (
   });
 };
 
-type ProjectMemberInvitationsRow = {
-  accepted_at: string | null;
-  author_scopes:
-    | Array<{
-        canPublish?: boolean;
-        can_publish?: boolean;
-        cmsAuthorId?: string;
-        cms_author_id?: string;
-      }>
-    | null;
-  created_at: string;
-  expires_at: string;
-  invitation_id: string;
-  invited_email: string;
-  public_token: string;
-  revoked_at: string | null;
-  role_keys: string[] | null;
-};
-
-const normalizeAuthorScopes = (value: ProjectMemberInvitationsRow["author_scopes"]): ProjectMemberAuthorScope[] =>
-  Array.isArray(value)
-    ? value
-        .map((scope) => ({
-          canPublish: normalizeProjectMemberAuthorScopeCanPublish(scope?.canPublish ?? scope?.can_publish),
-          cmsAuthorId: String(scope?.cmsAuthorId ?? scope?.cms_author_id ?? "").trim(),
-        }))
-        .filter((scope) => scope.cmsAuthorId)
-    : [];
-
-const normalizeInvitation = (row: ProjectMemberInvitationsRow) => ({
-  acceptedAt: row.accepted_at,
-  authorScopes: normalizeAuthorScopes(row.author_scopes),
-  createdAt: row.created_at,
-  expiresAt: row.expires_at,
-  invitationId: row.invitation_id,
-  invitePath: buildProjectMemberInvitationPath(row.public_token),
-  invitedEmail: row.invited_email,
-  revokedAt: row.revoked_at,
-  roles: row.role_keys ?? [],
-  status: getProjectMemberInvitationStatus({
-    acceptedAt: row.accepted_at,
-    expiresAt: row.expires_at,
-    revokedAt: row.revoked_at,
-  }),
-});
-
 const loadProjectMemberInvitationsPayload = async ({
+  actorUserId,
   page = 1,
   pageSize = PROJECT_INVITATIONS_PAGE_SIZE,
   projectId,
-  supabase,
 }: {
+  actorUserId: string;
   page?: number;
   pageSize?: number;
   projectId: string;
-  supabase: AuthenticatedProjectApiRouteContext["supabase"];
 }) => {
-  const boundedPage = Math.max(1, page);
-  const boundedPageSize = Math.max(1, Math.min(pageSize, PROJECT_INVITATIONS_PAGE_SIZE));
-  const offset = (boundedPage - 1) * boundedPageSize;
-  const { data, error } = await supabase.rpc("get_project_member_invitations", {
-    p_limit: boundedPageSize + 1,
-    p_offset: offset,
-    p_project_id: projectId,
+  return listConfigProjectMemberInvitations({
+    actorUserId,
+    page,
+    pageSize,
+    projectId,
   });
-
-  if (error) {
-    logProjectMemberInvitationRouteError("list", error, {
-      projectId,
-    });
-
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProjectAccessRouteErrorMessage(error, "members"));
-  }
-
-  const invitationRows = ((data ?? []) as ProjectMemberInvitationsRow[]).slice(0, boundedPageSize);
-
-  return {
-    hasMoreInvitations: ((data ?? []) as ProjectMemberInvitationsRow[]).length > boundedPageSize,
-    invitationPage: boundedPage,
-    invitationPageSize: boundedPageSize,
-    invitations: invitationRows.map(normalizeInvitation),
-  } satisfies ProjectMemberInvitationsPayload;
 };
 
 const authorScopeSchema = z.object({
@@ -155,14 +81,14 @@ const createProjectMemberInvitationSchema = z.object({
     .max(validProjectRoleKeys.size, "Too many roles were provided."),
 });
 
-export const GET = withAuthenticatedPreparedProjectRoute(async (request, { projectId, supabase }) => {
+export const GET = withAuthenticatedPreparedProjectRoute(async (request, { projectId, user }) => {
   try {
     const { searchParams } = new URL(request.url);
     const payload = await loadProjectMemberInvitationsPayload({
+      actorUserId: user.id,
       page: parsePositiveInteger(searchParams.get("page"), 1),
       pageSize: parsePositiveInteger(searchParams.get("pageSize"), PROJECT_INVITATIONS_PAGE_SIZE),
       projectId,
-      supabase,
     });
 
     return NextResponse.json(payload satisfies ProjectMemberInvitationsPayload);
@@ -172,7 +98,7 @@ export const GET = withAuthenticatedPreparedProjectRoute(async (request, { proje
   }
 });
 
-export const POST = withAuthenticatedPreparedProjectRoute(async (request, { projectId, supabase, user }) => {
+export const POST = withAuthenticatedPreparedProjectRoute(async (request, { projectId, user }) => {
   const payloadResult = await parseJsonBody(request, createProjectMemberInvitationSchema, {
     maxBytes: 16 * 1024,
   });
@@ -195,34 +121,18 @@ export const POST = withAuthenticatedPreparedProjectRoute(async (request, { proj
   }
 
   try {
-    const { error } = await supabase.rpc("create_project_member_invitation", {
-      p_author_scopes: payload.authorScopes,
-      p_email: payload.email.trim(),
-      p_project_id: projectId,
-      p_public_token: createProjectMemberInvitationToken(),
-      p_roles: payload.roles,
+    await createConfigProjectMemberInvitation({
+      actorUserId: user.id,
+      authorScopes: payload.authorScopes,
+      email: payload.email.trim(),
+      projectId,
+      publicToken: createProjectMemberInvitationToken(),
+      roles: payload.roles,
     });
 
-    if (error) {
-      logProjectMemberInvitationRouteError("create", error, {
-        invitedEmail: payload.email.trim(),
-        projectId,
-      });
-
-      if (isControlPlaneSetupError(error)) {
-        return NextResponse.json({ error: APP_SETUP_REQUIRED_MESSAGE }, { status: 500 });
-      }
-
-      const message = getProjectAccessRouteErrorMessage(error, "members");
-      return NextResponse.json(
-        { error: message },
-        { status: getProjectAccessRouteErrorStatus(message, "members") },
-      );
-    }
-
     const refreshedPayload = await loadProjectMemberInvitationsPayload({
+      actorUserId: user.id,
       projectId,
-      supabase,
     });
 
     return NextResponse.json(refreshedPayload satisfies ProjectMemberInvitationsPayload);

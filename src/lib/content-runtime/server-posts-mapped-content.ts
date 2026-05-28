@@ -85,7 +85,7 @@ const loadContentPostsListAuthorsSafely = async ({
 const ensureContentPostContextReady = (context: ContentProjectContext) => {
 
   if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+    throw new Error("This project needs a working database connection before you can continue.");
   }
 };
 

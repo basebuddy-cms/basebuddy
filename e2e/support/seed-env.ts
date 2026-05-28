@@ -1,44 +1,24 @@
 import { normalizeEnvValue } from "../../src/lib/env/placeholders";
 
 export const resolvePlaywrightSeedDatabaseUrl = (env: Partial<NodeJS.ProcessEnv>) =>
-  normalizeEnvValue(env.BASEBUDDY_CONTENT_DATABASE_URL) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_DATABASE_URL) ||
-  null;
-
-export const resolvePlaywrightSeedControlDatabaseUrl = (env: Partial<NodeJS.ProcessEnv>) =>
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_DATABASE_URL) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTENT_DATABASE_URL) ||
-  null;
-
-export const resolvePlaywrightSeedSupabaseUrl = (env: Partial<NodeJS.ProcessEnv>) =>
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_SUPABASE_URL) || null;
-
-export const resolvePlaywrightSeedPublishableKey = (env: Partial<NodeJS.ProcessEnv>) =>
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY) || null;
+  normalizeEnvValue(env.BASEBUDDY_CONTENT_DATABASE_URL) || null;
 
 export const resolvePlaywrightSeedContentSupabaseUrl = (env: Partial<NodeJS.ProcessEnv>) =>
-  normalizeEnvValue(env.BASEBUDDY_CONTENT_SUPABASE_URL) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_SUPABASE_URL) ||
-  null;
+  normalizeEnvValue(env.BASEBUDDY_SUPABASE_URL) || null;
 
 export const resolvePlaywrightSeedContentSupabaseSecretKey = (
   env: Partial<NodeJS.ProcessEnv>,
 ) =>
-  normalizeEnvValue(env.BASEBUDDY_CONTENT_SUPABASE_SECRET_KEY) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTENT_SUPABASE_SERVICE_ROLE_KEY) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY) ||
-  null;
+  normalizeEnvValue(env.BASEBUDDY_SUPABASE_SECRET_KEY) || null;
 
 export const resolvePlaywrightSeedRootCertificate = (env: Partial<NodeJS.ProcessEnv>) =>
   normalizeEnvValue(env.PLAYWRIGHT_DATABASE_ROOT_CERTIFICATE) ||
   normalizeEnvValue(env.BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE) ||
   null;
 
 export const resolvePlaywrightSeedRootCertificateFile = (env: Partial<NodeJS.ProcessEnv>) =>
   normalizeEnvValue(env.PLAYWRIGHT_DATABASE_ROOT_CERTIFICATE_FILE) ||
   normalizeEnvValue(env.BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE_FILE) ||
-  normalizeEnvValue(env.BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE_FILE) ||
   null;
 
 export const shouldUsePlaywrightSeedDatabaseSsl = (

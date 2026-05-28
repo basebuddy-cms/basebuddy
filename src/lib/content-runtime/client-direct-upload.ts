@@ -50,7 +50,7 @@ export const uploadPreparedContentRuntimeFile = async ({
   } catch (error) {
     if (error instanceof TypeError) {
       throw new Error(
-        "Could not upload directly to storage. Check upload storage access and allowed origins for this site.",
+        "Could not upload directly to storage. Check media storage access and allowed origins for this site.",
       );
     }
 

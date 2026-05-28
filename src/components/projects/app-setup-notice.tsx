@@ -3,7 +3,7 @@ import React from "react";
 import { Wrench } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { APP_SETUP_REQUIRED_MESSAGE } from "@/lib/control-plane/server";
+import { BASEBUDDY_SETUP_REQUIRED_MESSAGE } from "@/lib/basebuddy-config/setup";
 
 type AppSetupNoticeProps = {
   ctaHref?: string;
@@ -24,7 +24,7 @@ export function AppSetupNotice({
         </div>
         <div className="flex-1">
           <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{APP_SETUP_REQUIRED_MESSAGE}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{BASEBUDDY_SETUP_REQUIRED_MESSAGE}</p>
           {ctaHref && ctaLabel ? (
             <Button variant="hero" size="sm" className="mt-5" asChild>
               <Link href={ctaHref}>{ctaLabel}</Link>

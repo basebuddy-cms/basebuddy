@@ -3,6 +3,7 @@ import "server-only";
 import { Client, Pool } from "pg";
 
 import { getProjectPostSidebarConfig } from "@/lib/control-plane/project-post-sidebar-config";
+import { getConfigContentDatabaseSslConfig } from "@/lib/basebuddy-config/install";
 import {
   canManageProjectTaxonomy,
   getAccessibleAuthorIdsForAction,
@@ -11,7 +12,6 @@ import {
   type ProjectContentAction,
   type ProjectPermissionKey,
 } from "@/lib/control-plane/permissions";
-import { getInstallDatabaseSslConfig } from "@/lib/self-host/install-runtime";
 
 import {
   getContentAuthorOptions as getContentAuthorOptionsState,
@@ -149,13 +149,13 @@ import {
   refreshContentPostsProjection,
 } from "./server-content-post-projection-builder";
 import {
-  assertContentPlaneDatabaseCircuitClosed,
-  CONTENT_PLANE_CONNECTION_TIMEOUT_MS,
-  CONTENT_PLANE_QUERY_TIMEOUT_MS,
-  CONTENT_PLANE_STATEMENT_TIMEOUT_MS,
-  noteContentPlaneDatabaseFailure,
-  noteContentPlaneDatabaseSuccess,
-} from "./content-plane-db-resilience";
+  assertContentDatabaseCircuitClosed,
+  CONTENT_DATABASE_CONNECTION_TIMEOUT_MS,
+  CONTENT_DATABASE_QUERY_TIMEOUT_MS,
+  CONTENT_DATABASE_STATEMENT_TIMEOUT_MS,
+  noteContentDatabaseFailure,
+  noteContentDatabaseSuccess,
+} from "./content-database-resilience";
 import {
   getCachedProjectRuntimeValue,
   invalidateProjectRuntimeCacheGroups,
@@ -255,7 +255,7 @@ const getContentPostRevisionsScopeKey = (limit: number) =>
   `post-revisions|limit:${limit}`;
 
 const getContentDatabasePool = ({ connectionString }: ContentDatabaseClientOptions) => {
-  const sslConfig = getInstallDatabaseSslConfig();
+  const sslConfig = getConfigContentDatabaseSslConfig(connectionString);
   const existingPool = contentDatabasePools.get(connectionString);
 
   if (existingPool) {
@@ -265,12 +265,12 @@ const getContentDatabasePool = ({ connectionString }: ContentDatabaseClientOptio
   const pool = new Pool({
     allowExitOnIdle: true,
     connectionString,
-    connectionTimeoutMillis: CONTENT_PLANE_CONNECTION_TIMEOUT_MS,
+    connectionTimeoutMillis: CONTENT_DATABASE_CONNECTION_TIMEOUT_MS,
     idleTimeoutMillis: 5_000,
     max: CONTENT_RUNTIME_POOL_MAX_CLIENTS,
-    query_timeout: CONTENT_PLANE_QUERY_TIMEOUT_MS,
+    query_timeout: CONTENT_DATABASE_QUERY_TIMEOUT_MS,
     ssl: sslConfig,
-    statement_timeout: CONTENT_PLANE_STATEMENT_TIMEOUT_MS,
+    statement_timeout: CONTENT_DATABASE_STATEMENT_TIMEOUT_MS,
   });
 
   contentDatabasePools.set(connectionString, pool);
@@ -284,7 +284,7 @@ const withContentDatabaseClient = async <T>(
   incrementContentRuntimeRequestMetric("pgCallCount");
 
   return measureContentRuntimeRequestSpan("db", async () => {
-    assertContentPlaneDatabaseCircuitClosed(connectionString);
+    assertContentDatabaseCircuitClosed(connectionString);
 
     try {
       const pool = getContentDatabasePool({ connectionString });
@@ -292,13 +292,13 @@ const withContentDatabaseClient = async <T>(
 
       try {
         const value = await handler(client);
-        noteContentPlaneDatabaseSuccess(connectionString);
+        noteContentDatabaseSuccess(connectionString);
         return value;
       } finally {
         client.release();
       }
     } catch (error) {
-      noteContentPlaneDatabaseFailure(connectionString, error);
+      noteContentDatabaseFailure(connectionString, error);
       throw error;
     }
   });
@@ -621,7 +621,10 @@ export const releaseContentPostEditSession = async ({
   postId?: string | null;
   projectId: string;
 }) => {
+  const context = await getRequiredContentProjectContext(projectId);
+
   await releaseContentPostEditSessionAccess({
+    context,
     postId,
     projectId,
   });

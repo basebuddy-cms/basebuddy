@@ -1,9 +1,9 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { getSafeNextPath } from "@/lib/supabase/auth";
-import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
+import { getSafeNextPath } from "@/lib/auth/redirects";
+import { createLocalAuthenticatedSession } from "@/lib/auth/local-auth";
+import { authenticateBaseBuddyConfigUser } from "@/lib/basebuddy-config/auth";
 
 const playwrightRoleSchema = z.enum(["owner", "admin", "editor", "author", "viewer"]);
 
@@ -64,27 +64,18 @@ export async function GET(request: NextRequest) {
   }
 
   const nextPath = getSafeNextPath(request.nextUrl.searchParams.get("next"));
-  let response = NextResponse.redirect(new URL(nextPath, request.url));
-  const supabase = createServerClient(getSupabaseUrl(), getSupabasePublishableKey(), {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        response = NextResponse.redirect(new URL(nextPath, request.url));
+  const response = NextResponse.redirect(new URL(nextPath, request.url));
+  const user = await authenticateBaseBuddyConfigUser(credentials);
 
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
-        }
-      },
-    },
-  });
-
-  const { error } = await supabase.auth.signInWithPassword(credentials);
-
-  if (error) {
-    return NextResponse.json({ error: `Could not sign in Playwright role. ${error.message}` }, { status: 500 });
+  if (!user) {
+    return NextResponse.json({ error: "Could not sign in Playwright role." }, { status: 500 });
   }
+
+  await createLocalAuthenticatedSession({
+    cookies: response.cookies,
+    request,
+    userId: user.id,
+  });
 
   return response;
 }

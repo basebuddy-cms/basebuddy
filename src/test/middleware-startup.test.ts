@@ -1,15 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createServerClientMock, getUserMock } = vi.hoisted(() => ({
-  createServerClientMock: vi.fn(),
-  getUserMock: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
-}));
-
 const nextResponseNextMock = vi.hoisted(() => vi.fn());
-
-vi.mock("@supabase/ssr", () => ({
-  createServerClient: createServerClientMock,
-}));
 
 vi.mock("next/server", () => ({
   NextResponse: {
@@ -24,8 +15,6 @@ describe("middleware startup", () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.BASEBUDDY_CONTROL_SUPABASE_URL;
-    delete process.env.BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY;
     nextResponseNextMock.mockImplementation(() => ({
       cookies: {
         set: vi.fn(),
@@ -33,18 +22,13 @@ describe("middleware startup", () => {
       headers: new Headers(),
       status: 200,
     }));
-    createServerClientMock.mockReturnValue({
-      auth: {
-        getUser: getUserMock,
-      },
-    });
   });
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it("lets first-run pages render before Supabase env is configured", async () => {
+  it("keeps CSP middleware independent from Supabase session refresh", async () => {
     const { middleware } = await import("../../src/middleware");
 
     const response = await middleware({
@@ -57,7 +41,7 @@ describe("middleware startup", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Security-Policy")).toContain("script-src 'self'");
-    expect(createServerClientMock).not.toHaveBeenCalled();
+    expect(nextResponseNextMock).toHaveBeenCalledOnce();
   });
 
   it("attaches a production CSP nonce for Next inline scripts", async () => {

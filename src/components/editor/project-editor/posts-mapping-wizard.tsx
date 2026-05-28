@@ -388,7 +388,7 @@ export function ProjectEditorPostsMappingMediaStorageStep({
           providerLabel="Media Storage"
           sectionDescription="Use a dedicated image bucket or share a storage bucket with the files library."
           storage={mediaStorage}
-          supabaseBucketDescription="The name of the Supabase Storage bucket used for images in this install."
+          supabaseBucketDescription="The name of the Supabase Storage bucket used for images in BaseBuddy."
           onBucketNameChange={onBucketNameChange}
           onEndpointChange={onEndpointChange}
           onProviderChange={onProviderChange}
@@ -404,7 +404,7 @@ export function ProjectEditorPostsMappingMediaStorageStep({
           providerLabel="Files Storage"
           sectionDescription="Choose the bucket that should back documents, PDFs, CSVs, and other non-image files."
           storage={filesStorage}
-          supabaseBucketDescription="The name of the Supabase Storage bucket used for non-image files in this install."
+          supabaseBucketDescription="The name of the Supabase Storage bucket used for non-image files in BaseBuddy."
           onBucketNameChange={onFilesBucketNameChange}
           onEndpointChange={onFilesEndpointChange}
           onProviderChange={onFilesProviderChange}
@@ -472,7 +472,7 @@ function ProjectEditorPostsMappingStorageSection({
           {storage.provider === "none"
             ? "You can configure this storage later."
             : storage.provider === "supabase_bucket"
-              ? "Use a Supabase Storage bucket from this install."
+              ? "Use a Supabase Storage bucket connected to BaseBuddy."
               : "Works with AWS S3, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, and other S3-compatible providers."}
         </p>
       </div>
@@ -505,7 +505,7 @@ function ProjectEditorPostsMappingStorageSection({
             )}
             <p className="text-xs text-muted-foreground">
               {bucketOptions.length > 0
-                ? `${supabaseBucketDescription} Choose one of the available buckets in this install.`
+                ? `${supabaseBucketDescription} Choose one of the available buckets.`
                 : supabaseBucketDescription}
             </p>
           </div>
@@ -569,8 +569,8 @@ function ProjectEditorPostsMappingStorageSection({
           </div>
           <div className="space-y-2">
             <p className="rounded-lg border border-border bg-secondary/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              Upload storage credentials are managed in app configuration. Add the matching
-              storage credential pair before saving this mapping.
+              Media storage keys are managed in environment values. Add the matching
+              storage keys before saving this mapping.
             </p>
           </div>
         </div>

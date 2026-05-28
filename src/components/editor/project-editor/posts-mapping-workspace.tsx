@@ -469,12 +469,12 @@ export function ProjectEditorPostsMappingWorkspace({
 
     if (isS3CompatibleFilesStorage) {
       if (!nextMappingConfig.filesStorage?.bucketName) {
-        toast.error("Bucket name is required for files upload storage.");
+        toast.error("Bucket name is required for files storage.");
         return;
       }
 
       if (!nextMappingConfig.filesStorage.endpoint && !nextMappingConfig.filesStorage.region) {
-        toast.error("Enter either an endpoint URL or a region for files upload storage.");
+        toast.error("Enter either an endpoint URL or a region for files storage.");
         return;
       }
 
@@ -482,12 +482,12 @@ export function ProjectEditorPostsMappingWorkspace({
 
     if (isS3CompatibleMediaStorage) {
       if (!nextMappingConfig.mediaStorage?.bucketName) {
-        toast.error("Bucket name is required for media upload storage.");
+        toast.error("Bucket name is required for media storage.");
         return;
       }
 
       if (!nextMappingConfig.mediaStorage.endpoint && !nextMappingConfig.mediaStorage.region) {
-        toast.error("Enter either an endpoint URL or a region for media upload storage.");
+        toast.error("Enter either an endpoint URL or a region for media storage.");
         return;
       }
 

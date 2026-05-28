@@ -6,13 +6,9 @@ describe("next config startup", () => {
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.BASEBUDDY_CONTROL_SUPABASE_URL;
-    delete process.env.BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY;
-    delete process.env.BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY;
-    delete process.env.BASEBUDDY_CONTROL_DATABASE_URL;
-    delete process.env.BASEBUDDY_CONTENT_SUPABASE_URL;
-    delete process.env.BASEBUDDY_CONTENT_SUPABASE_PUBLISHABLE_KEY;
-    delete process.env.BASEBUDDY_CONTENT_SUPABASE_SECRET_KEY;
+    delete process.env.BASEBUDDY_SUPABASE_URL;
+    delete process.env.BASEBUDDY_SUPABASE_PUBLISHABLE_KEY;
+    delete process.env.BASEBUDDY_SUPABASE_SECRET_KEY;
     delete process.env.BASEBUDDY_CONTENT_DATABASE_URL;
   });
 

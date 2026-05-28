@@ -448,7 +448,7 @@ describe("content mapping", () => {
     });
   });
 
-  it("normalizes project mapping rows from control-plane RPC payloads", () => {
+  it("normalizes project mapping rows from stored mapping payloads", () => {
     const mapping = normalizeContentProjectMapping({
       binding_id: "binding-1",
       binding_mode: "mapped_content",

@@ -333,7 +333,7 @@ export const getContentMediaUrls = async ({
   }
 
   throw new Error(
-    "Could not browse this private storage library. Check upload storage and try again.",
+    "Could not browse this private storage library. Check media storage and try again.",
   );
 };
 

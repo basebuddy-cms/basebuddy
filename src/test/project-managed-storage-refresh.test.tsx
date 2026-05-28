@@ -234,9 +234,13 @@ describe("managed storage refresh callbacks", () => {
       expect(fetch).toHaveBeenCalled();
     });
 
-    const input = container.querySelector('input[type="file"]');
+    const input = await waitFor(() => {
+      const renderedInput = container.querySelector('input[type="file"]');
 
-    expect(input).not.toBeNull();
+      expect(renderedInput).not.toBeNull();
+
+      return renderedInput;
+    });
 
     fireEvent.change(input as HTMLInputElement, {
       target: {
@@ -289,9 +293,13 @@ describe("managed storage refresh callbacks", () => {
       expect(fetch).toHaveBeenCalled();
     });
 
-    const input = container.querySelector('input[type="file"]');
+    const input = await waitFor(() => {
+      const renderedInput = container.querySelector('input[type="file"]');
 
-    expect(input).not.toBeNull();
+      expect(renderedInput).not.toBeNull();
+
+      return renderedInput;
+    });
 
     fireEvent.change(input as HTMLInputElement, {
       target: {

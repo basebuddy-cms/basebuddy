@@ -190,7 +190,7 @@ export function ProjectSettingsView({
       <div className="mb-8">
         <h2 className="text-2xl font-semibold text-foreground">Settings</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Manage workspace details, members, invitations, permissions, content mapping, and editor sidebar behavior.
+          Manage project details, members, invitations, permissions, content mapping, and editor sidebar behavior.
         </p>
         <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
           {getSettingsTabLabel(activeSettingsTab)}

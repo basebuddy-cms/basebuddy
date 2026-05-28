@@ -7,7 +7,7 @@ import {
 import {
   type CollectionDependencies,
   type ContentCollectionEntryTable,
-  ensureContentPlaneConnection,
+  ensureContentDatabaseConnection,
 } from "./server-collections-shared";
 
 const createContentCollectionsAdapter = (
@@ -67,10 +67,10 @@ export const createContentCollectionEntry = async ({
   });
 
   if (!readyMapping) {
-    throw new Error("Finish content setup before managing collections.");
+    throw new Error("Finish mapping before managing collections.");
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
@@ -147,10 +147,10 @@ export const updateContentCollectionEntry = async ({
   });
 
   if (!readyMapping) {
-    throw new Error("Finish content setup before managing collections.");
+    throw new Error("Finish mapping before managing collections.");
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
@@ -204,10 +204,10 @@ export const deleteContentCollectionEntries = async ({
   });
 
   if (!readyMapping) {
-    throw new Error("Finish content setup before managing collections.");
+    throw new Error("Finish mapping before managing collections.");
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);

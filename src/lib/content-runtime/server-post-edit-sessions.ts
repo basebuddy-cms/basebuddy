@@ -1,14 +1,10 @@
-import {
-  APP_SETUP_REQUIRED_MESSAGE,
-  isControlPlaneSetupError,
-} from "@/lib/control-plane/server";
 import { cache } from "react";
-import { getProductionErrorMessage } from "@/lib/errors/user-facing";
+
+import { getConfigProjectPostAuthorAssignments } from "@/lib/basebuddy-config/projects";
 import {
   canForceProjectPostTakeover,
   type ProjectMemberAccess,
 } from "@/lib/control-plane/permissions";
-import { createControlPlaneServerClient } from "@/lib/control-plane/supabase-clients";
 
 import { mapContentPostEditingSession } from "./server-support";
 import {
@@ -16,35 +12,17 @@ import {
   projectRuntimeCacheGroups,
 } from "./server-runtime-cache";
 
-type ProjectPostEditSessionRow = {
-  acquired?: boolean;
-  active?: boolean;
-  blocking_email?: string | null;
-  blocking_name?: string | null;
-  blocking_post_id?: string | null;
-  blocking_post_title?: string | null;
-  blocking_user_id?: string | null;
-  editor_email?: string | null;
-  editor_name?: string | null;
-  last_heartbeat_at?: string;
-  post_id?: string;
-  post_title?: string | null;
-  takeover?: boolean;
-  user_id?: string;
-  avatar_url?: string | null;
-};
-
-type ProjectPostAuthorAssignmentRow = {
-  avatar_url: string | null;
-  cms_author_id: string;
-  email: string | null;
-  name: string | null;
-  user_id: string | null;
+type ContentPostSessionUser = {
+  avatarUrl?: string | null;
+  email?: string | null;
+  id?: string | null;
+  name?: string | null;
 };
 
 type ContentPostSessionContext = {
   connectionString: string | null;
   memberAccess: ProjectMemberAccess;
+  user: ContentPostSessionUser;
 };
 
 type ProjectPostEditSessionSnapshot = Omit<
@@ -52,11 +30,46 @@ type ProjectPostEditSessionSnapshot = Omit<
   "isCurrentUser"
 >;
 
-const ensurePostEditContextReady = (context: ContentPostSessionContext) => {
+type ProjectPostEditSessionRecord = ProjectPostEditSessionSnapshot & {
+  lastHeartbeatMs: number;
+};
 
-  if (!context.connectionString) {
-    throw new Error("This project needs a content connection before you can continue.");
+const PROJECT_POST_EDIT_SESSION_STALE_MS = 20_000;
+const projectPostEditSessionsByProjectId = new Map<
+  string,
+  Map<string, ProjectPostEditSessionRecord>
+>();
+
+const getProjectPostEditSessionStore = (projectId: string) => {
+  const existingStore = projectPostEditSessionsByProjectId.get(projectId);
+
+  if (existingStore) {
+    return existingStore;
   }
+
+  const nextStore = new Map<string, ProjectPostEditSessionRecord>();
+  projectPostEditSessionsByProjectId.set(projectId, nextStore);
+  return nextStore;
+};
+
+const ensurePostEditContextReady = (context: ContentPostSessionContext) => {
+  if (!context.connectionString) {
+    throw new Error("This project needs a working database connection before you can continue.");
+  }
+
+  if (!context.user.id?.trim()) {
+    throw new Error("Authentication required.");
+  }
+};
+
+const getContentPostSessionUserId = (context: ContentPostSessionContext) => {
+  const userId = context.user.id?.trim();
+
+  if (!userId) {
+    throw new Error("Authentication required.");
+  }
+
+  return userId;
 };
 
 const formatPostEditConflictMessage = ({
@@ -73,56 +86,136 @@ const formatPostEditConflictMessage = ({
   return `${editorLabel} is already working on ${titleLabel}.`;
 };
 
-const buildBlockingSession = (row: ProjectPostEditSessionRow | null) =>
-  row?.blocking_post_id && row?.blocking_user_id
+const cloneProjectPostEditSessionSnapshot = (
+  session: ProjectPostEditSessionRecord,
+): ProjectPostEditSessionSnapshot => ({
+  avatarUrl: session.avatarUrl,
+  editorEmail: session.editorEmail,
+  editorName: session.editorName,
+  lastHeartbeatAt: session.lastHeartbeatAt,
+  postId: session.postId,
+  postTitle: session.postTitle,
+  userId: session.userId,
+});
+
+const buildBlockingSession = (
+  session: ProjectPostEditSessionRecord | null | undefined,
+) =>
+  session
     ? {
-        avatarUrl: null,
-        editorEmail: row.blocking_email ?? null,
-        editorName: row.blocking_name ?? null,
+        ...cloneProjectPostEditSessionSnapshot(session),
         isCurrentUser: false,
-        lastHeartbeatAt: new Date().toISOString(),
-        postId: row.blocking_post_id,
-        postTitle: row.blocking_post_title ?? null,
-        userId: row.blocking_user_id,
       }
     : null;
+
+const cleanupStaleProjectPostEditSessions = (projectId: string) => {
+  const store = projectPostEditSessionsByProjectId.get(projectId);
+
+  if (!store?.size) {
+    return;
+  }
+
+  const staleBefore = Date.now() - PROJECT_POST_EDIT_SESSION_STALE_MS;
+
+  for (const [postId, session] of Array.from(store.entries())) {
+    if (session.lastHeartbeatMs < staleBefore) {
+      store.delete(postId);
+    }
+  }
+
+  if (!store.size) {
+    projectPostEditSessionsByProjectId.delete(projectId);
+  }
+};
+
+const deleteProjectPostEditSessionByUserId = ({
+  projectId,
+  userId,
+}: {
+  projectId: string;
+  userId: string;
+}) => {
+  const store = projectPostEditSessionsByProjectId.get(projectId);
+
+  if (!store?.size) {
+    return;
+  }
+
+  for (const [postId, session] of Array.from(store.entries())) {
+    if (session.userId === userId) {
+      store.delete(postId);
+    }
+  }
+
+  if (!store.size) {
+    projectPostEditSessionsByProjectId.delete(projectId);
+  }
+};
+
+const createProjectPostEditSessionRecord = ({
+  context,
+  postId,
+  postTitle,
+}: {
+  context: ContentPostSessionContext;
+  postId: string;
+  postTitle?: string | null;
+}): ProjectPostEditSessionRecord => {
+  const now = new Date();
+
+  return {
+    avatarUrl: context.user.avatarUrl ?? null,
+    editorEmail: context.user.email ?? null,
+    editorName: context.user.name?.trim() || context.user.email?.trim() || null,
+    lastHeartbeatAt: now.toISOString(),
+    lastHeartbeatMs: now.getTime(),
+    postId,
+    postTitle: postTitle?.trim() || null,
+    userId: getContentPostSessionUserId(context),
+  };
+};
+
+const upsertProjectPostEditSession = ({
+  context,
+  postId,
+  postTitle,
+  projectId,
+}: {
+  context: ContentPostSessionContext;
+  postId: string;
+  postTitle?: string | null;
+  projectId: string;
+}) => {
+  deleteProjectPostEditSessionByUserId({
+    projectId,
+    userId: getContentPostSessionUserId(context),
+  });
+
+  const store = getProjectPostEditSessionStore(projectId);
+  const session = createProjectPostEditSessionRecord({
+    context,
+    postId,
+    postTitle,
+  });
+
+  store.set(postId, session);
+  return session;
+};
 
 const invalidateProjectPostPresenceSnapshot = (projectId: string) => {
   invalidateProjectRuntimeCacheGroups(projectId, [projectRuntimeCacheGroups.postsPresence]);
 };
 
-const loadProjectPostEditSessionSnapshot = cache(async (projectId: string) => {
-  const supabase = await createControlPlaneServerClient();
-  const { data, error } = await supabase.rpc("get_project_post_edit_sessions", {
-    p_project_id: projectId,
-  });
+const loadProjectPostEditSessionSnapshot = async (projectId: string) => {
+  cleanupStaleProjectPostEditSessions(projectId);
 
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProductionErrorMessage(error, "Could not load post editing activity right now."));
-  }
-
-  const sessions = ((data ?? []) as ProjectPostEditSessionRow[])
-    .filter((session) => session.post_id && session.user_id)
-    .map((session) => {
-      const mappedSession = mapContentPostEditingSession(session, "");
-
-      return {
-        avatarUrl: mappedSession.avatarUrl,
-        editorEmail: mappedSession.editorEmail,
-        editorName: mappedSession.editorName,
-        lastHeartbeatAt: mappedSession.lastHeartbeatAt,
-        postId: mappedSession.postId,
-        postTitle: mappedSession.postTitle,
-        userId: mappedSession.userId,
-      } satisfies ProjectPostEditSessionSnapshot;
-    });
+  const store = projectPostEditSessionsByProjectId.get(projectId);
+  const sessions = Array.from(store?.values() ?? [])
+    .sort((left, right) => right.lastHeartbeatMs - left.lastHeartbeatMs)
+    .map(cloneProjectPostEditSessionSnapshot);
 
   return new Map(sessions.map((session) => [session.postId, session]));
-});
+};
 
 export const getProjectPostEditSessionSnapshot = async (projectId: string) =>
   loadProjectPostEditSessionSnapshot(projectId);
@@ -141,26 +234,9 @@ export const getProjectPostEditSessions = async (projectId: string, currentUserI
   );
 };
 
-const loadProjectPostAuthorAssignments = cache(async (projectId: string) => {
-  const supabase = await createControlPlaneServerClient();
-  const { data, error } = await supabase.rpc("get_project_post_author_assignments", {
-    p_project_id: projectId,
-  });
-
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProductionErrorMessage(error, "Could not load post author details right now."));
-  }
-
-  const assignments = ((data ?? []) as ProjectPostAuthorAssignmentRow[]).filter((assignment) =>
-    Boolean(assignment.cms_author_id),
-  );
-
-  return new Map(assignments.map((assignment) => [assignment.cms_author_id, assignment]));
-});
+const loadProjectPostAuthorAssignments = cache((projectId: string) =>
+  getConfigProjectPostAuthorAssignments(projectId),
+);
 
 export const getProjectPostAuthorAssignments = async (projectId: string) =>
   loadProjectPostAuthorAssignments(projectId);
@@ -180,38 +256,33 @@ export const assertContentPostEditSessionAccess = async ({
 }) => {
   ensurePostEditContextReady(context);
   await verifyPostWriteAccess();
+  cleanupStaleProjectPostEditSessions(projectId);
 
-  const supabase = await createControlPlaneServerClient();
-  const { data, error } = await supabase.rpc("heartbeat_project_post_edit_session", {
-    p_post_id: postId,
-    p_post_title: postTitle ?? null,
-    p_project_id: projectId,
-  });
+  const store = getProjectPostEditSessionStore(projectId);
+  const currentSession = store.get(postId);
 
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
-
-    throw new Error(getProductionErrorMessage(error, "Could not verify post editing access right now."));
-  }
-
-  const row = ((Array.isArray(data) ? data[0] : data) ?? null) as ProjectPostEditSessionRow | null;
-
-  if (row?.active) {
+  if (currentSession?.userId === getContentPostSessionUserId(context)) {
+    store.set(postId, createProjectPostEditSessionRecord({ context, postId, postTitle }));
     invalidateProjectPostPresenceSnapshot(projectId);
     return;
   }
 
-  if (!row?.blocking_user_id) {
-    throw new Error("Post editing access expired.");
+  if (!currentSession) {
+    upsertProjectPostEditSession({
+      context,
+      postId,
+      postTitle,
+      projectId,
+    });
+    invalidateProjectPostPresenceSnapshot(projectId);
+    return;
   }
 
   throw new Error(
     formatPostEditConflictMessage({
-      editorEmail: row.blocking_email ?? null,
-      editorName: row.blocking_name ?? null,
-      postTitle: row.blocking_post_title ?? postTitle ?? null,
+      editorEmail: currentSession.editorEmail,
+      editorName: currentSession.editorName,
+      postTitle: currentSession.postTitle ?? postTitle ?? null,
     }),
   );
 };
@@ -238,30 +309,38 @@ export const acquireContentPostEditSessionAccess = async ({
     throw new Error("Only owners, admins, and editors can take over an active post editing session.");
   }
 
-  const supabase = await createControlPlaneServerClient();
-  const { data, error } = await supabase.rpc("acquire_project_post_edit_session", {
-    p_force: force,
-    p_post_id: postId,
-    p_post_title: postTitle ?? null,
-    p_project_id: projectId,
-  });
+  cleanupStaleProjectPostEditSessions(projectId);
 
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
+  const store = getProjectPostEditSessionStore(projectId);
+  const existingSession = store.get(postId);
 
-    throw new Error(getProductionErrorMessage(error, "Could not open this post right now."));
+  if (existingSession && existingSession.userId !== getContentPostSessionUserId(context) && !force) {
+    return {
+      acquired: false,
+      blockingSession: buildBlockingSession(existingSession),
+      takeover: false,
+    };
   }
 
-  const row = ((Array.isArray(data) ? data[0] : data) ?? null) as ProjectPostEditSessionRow | null;
+  const takeover = Boolean(existingSession && existingSession.userId !== getContentPostSessionUserId(context));
+  const blockingSession = takeover ? buildBlockingSession(existingSession) : null;
 
+  if (takeover) {
+    store.delete(postId);
+  }
+
+  upsertProjectPostEditSession({
+    context,
+    postId,
+    postTitle,
+    projectId,
+  });
   invalidateProjectPostPresenceSnapshot(projectId);
 
   return {
-    acquired: Boolean(row?.acquired),
-    blockingSession: buildBlockingSession(row),
-    takeover: Boolean(row?.takeover),
+    acquired: true,
+    blockingSession,
+    takeover,
   };
 };
 
@@ -280,47 +359,67 @@ export const heartbeatContentPostEditSessionAccess = async ({
 }) => {
   ensurePostEditContextReady(context);
   await verifyPostWriteAccess();
+  cleanupStaleProjectPostEditSessions(projectId);
 
-  const supabase = await createControlPlaneServerClient();
-  const { data, error } = await supabase.rpc("heartbeat_project_post_edit_session", {
-    p_post_id: postId,
-    p_post_title: postTitle ?? null,
-    p_project_id: projectId,
-  });
+  const store = getProjectPostEditSessionStore(projectId);
+  const existingSession = store.get(postId);
 
-  if (error) {
-    if (isControlPlaneSetupError(error)) {
-      throw new Error(APP_SETUP_REQUIRED_MESSAGE);
-    }
+  if (existingSession?.userId === getContentPostSessionUserId(context)) {
+    store.set(postId, createProjectPostEditSessionRecord({ context, postId, postTitle }));
+    invalidateProjectPostPresenceSnapshot(projectId);
 
-    throw new Error(getProductionErrorMessage(error, "Could not refresh editing access right now."));
+    return {
+      active: true,
+      blockingSession: null,
+    };
   }
 
-  const row = ((Array.isArray(data) ? data[0] : data) ?? null) as ProjectPostEditSessionRow | null;
+  if (existingSession) {
+    invalidateProjectPostPresenceSnapshot(projectId);
 
+    return {
+      active: false,
+      blockingSession: buildBlockingSession(existingSession),
+    };
+  }
+
+  upsertProjectPostEditSession({
+    context,
+    postId,
+    postTitle,
+    projectId,
+  });
   invalidateProjectPostPresenceSnapshot(projectId);
 
   return {
-    active: Boolean(row?.active),
-    blockingSession: buildBlockingSession(row),
+    active: true,
+    blockingSession: null,
   };
 };
 
 export const releaseContentPostEditSessionAccess = async ({
+  context,
   postId,
   projectId,
 }: {
+  context: ContentPostSessionContext;
   postId?: string | null;
   projectId: string;
 }) => {
-  const supabase = await createControlPlaneServerClient();
-  const { error } = await supabase.rpc("release_project_post_edit_session", {
-    p_post_id: postId ?? null,
-    p_project_id: projectId,
-  });
+  const store = projectPostEditSessionsByProjectId.get(projectId);
 
-  if (error && !isControlPlaneSetupError(error)) {
-    throw new Error(getProductionErrorMessage(error, "Could not leave this post right now."));
+  if (!store?.size) {
+    return;
+  }
+
+  for (const [sessionPostId, session] of Array.from(store.entries())) {
+    if (session.userId === getContentPostSessionUserId(context) && (!postId || sessionPostId === postId)) {
+      store.delete(sessionPostId);
+    }
+  }
+
+  if (!store.size) {
+    projectPostEditSessionsByProjectId.delete(projectId);
   }
 
   invalidateProjectPostPresenceSnapshot(projectId);

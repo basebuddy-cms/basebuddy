@@ -56,6 +56,7 @@ export default async function ProfileSettingsPage() {
           initialAvatarUrl={profileResult.avatarUrl}
           initialEmail={profileResult.email}
           initialName={profileResult.name}
+          initialUserId={profileResult.userId}
         />
       </div>
     </div>

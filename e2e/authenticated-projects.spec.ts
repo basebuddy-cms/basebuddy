@@ -46,7 +46,7 @@ test.describe("authenticated project access", () => {
     await expect(page).toHaveURL(new RegExp(`/projects/${projectSlug}(?:/posts)?$`), {
       timeout: 45_000,
     });
-    await expect(page.getByRole("button", { name: "Set up Posts" })).toBeVisible({
+    await expect(page.getByRole("button", { name: "Map Posts" })).toBeVisible({
       timeout: 30_000,
     });
   });

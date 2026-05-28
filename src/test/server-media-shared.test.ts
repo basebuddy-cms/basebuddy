@@ -11,14 +11,14 @@ vi.mock("react", async () => {
 });
 
 import {
-  ensureContentPlaneStorageConnection,
+  ensureContentStorageConnection,
   getUniqueContentFolderPath,
   getUniqueContentObjectPath,
 } from "@/lib/content-runtime/server-media-shared";
 
 const createContext = (
-  overrides: Partial<Parameters<typeof ensureContentPlaneStorageConnection>[0]> = {},
-): Parameters<typeof ensureContentPlaneStorageConnection>[0] => ({
+  overrides: Partial<Parameters<typeof ensureContentStorageConnection>[0]> = {},
+): Parameters<typeof ensureContentStorageConnection>[0] => ({
   apiUrl: "https://install.supabase.co",
   connectionString: null,
   memberAccess: {
@@ -36,15 +36,15 @@ const createContext = (
   },
   user: {
     id: "user-1",
-  } as Parameters<typeof ensureContentPlaneStorageConnection>[0]["user"],
+  } as Parameters<typeof ensureContentStorageConnection>[0]["user"],
   ...overrides,
 });
 
 describe("server media shared helpers", () => {
   it("uses self-host mapped content wording when connection setup is incomplete", () => {
     expect(() =>
-      ensureContentPlaneStorageConnection(createContext()),
-    ).toThrow("This project needs a content connection before you can continue.");
+      ensureContentStorageConnection(createContext()),
+    ).toThrow("This project needs a working database connection before you can continue.");
   });
 
   it("keeps generated upload object paths inside the selected folder", () => {

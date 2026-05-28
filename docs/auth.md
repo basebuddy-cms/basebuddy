@@ -1,61 +1,25 @@
 # Auth
 
-BaseBuddy uses Supabase Auth from the control-plane Supabase project.
+BaseBuddy uses local email/password users stored in `basebuddy.config.json`.
 
-## Supported Providers
+The first owner is created from onboarding or `pnpm basebuddy setup`. Sign-in creates a signed HttpOnly session cookie. Raw session tokens are not written to the browser or logs.
 
-`BASEBUDDY_AUTH_PROVIDERS` accepts these values:
+## Setup
 
-- `password`
-- `magic_link`
-- `google`
-- `github`
+Create the first owner from UI:
 
-Example:
+```text
+/onboarding
+```
+
+Or from CLI:
 
 ```sh
-BASEBUDDY_AUTH_PROVIDERS=password,magic_link,google
+pnpm basebuddy setup \
+  --owner-email owner@example.com \
+  --owner-name "Owner" \
+  --owner-password "replace-with-a-strong-password"
 ```
-
-If omitted, all supported providers are shown.
-
-## Redirect URLs
-
-Add these in the Supabase Auth settings for the control-plane project:
-
-```text
-http://localhost:8080/auth/callback
-<production-url>/auth/callback
-<production-url>/invite/*
-```
-
-When deploying first to a temporary Vercel URL, add:
-
-```text
-https://your-app.vercel.app/auth/callback
-```
-
-## Auth Flow
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant App as BaseBuddy
-  participant Auth as Supabase Auth
-  User->>App: Open /login
-  App->>Auth: Start provider flow
-  Auth-->>App: Redirect to /auth/callback
-  App->>Auth: Exchange code/session
-  App-->>User: Redirect to safe next path or /projects
-```
-
-## Safe Redirects
-
-BaseBuddy ignores unsafe external `next` values. Signed-in users are redirected to a safe internal path or `/projects`.
-
-## Incomplete Setup
-
-When setup is incomplete, protected routes redirect to `/onboarding` before normal app session reads. This keeps first-run setup reachable even before the install is ready.
 
 ## Test Auth
 

@@ -42,7 +42,8 @@ describe("posts mapping storage env UI", () => {
     expect(screen.queryByLabelText("Access Key ID")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Secret Access Key")).not.toBeInTheDocument();
     expect(
-      screen.getAllByText(/Upload storage credentials are managed in app configuration/i),
+      screen.getAllByText(/Media storage keys are managed in environment values/i),
     ).toHaveLength(2);
+    expect(screen.queryByText(/app configuration/i)).not.toBeInTheDocument();
   });
 });

@@ -25,7 +25,7 @@ BaseBuddy version or commit:
 Deployment target:
 Node version:
 pnpm version:
-Install topology: same-project or split-project
+Deployment target and writable config path:
 Supabase/Postgres version if known:
 Output from pnpm setup:check with secrets redacted:
 What you expected:
@@ -36,12 +36,10 @@ Relevant server log excerpt with secrets removed:
 
 ## Common First Checks
 
-- Confirm `.env` uses either same-project names or split-project names, not both.
+- Confirm `.env` includes `BASEBUDDY_AUTH_SECRET` and `BASEBUDDY_CONTENT_DATABASE_URL`.
 - Restart the app after changing `.env`.
-- Confirm the baseline migration has been applied to the control-plane database.
-- Confirm Supabase Auth redirect URLs include `/auth/callback`.
-- Confirm invite redirects include `/invite/*`.
-- Confirm content-plane credentials can read and write the mapped schema.
+- Confirm `basebuddy.config.json` exists in the app root and is writable by the app process.
+- Confirm the database URL can read and write the mapped schema.
 - Confirm S3-compatible credentials are complete pairs when private media/files are mapped.
 - Confirm the app is behind HTTPS and a proxy/WAF when exposed publicly.
 
@@ -56,8 +54,8 @@ Include enough detail to reproduce the issue, but do not include live credential
 Community support can usually help with:
 
 - setup and onboarding issues;
-- Supabase Auth redirect configuration;
-- control-plane migration errors;
+- local password sign-in and invite return paths;
+- setup, config file, and database connection errors;
 - mapping questions;
 - storage and upload configuration;
 - reproducible product bugs.

@@ -4,18 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 globalThis.React = React;
 
 const {
-  getControlPlaneSchemaSetupSectionMock,
-  getInstallSetupStatusMock,
+  getBaseBuddyConfigSetupStatusMock,
   getOptionalAuthenticatedUserWithAccountMock,
   getProjectsPageBootstrapMock,
-  isInstallSetupReadyMock,
+  isBaseBuddyConfigSetupReadyMock,
   redirectMock,
 } = vi.hoisted(() => ({
-  getControlPlaneSchemaSetupSectionMock: vi.fn(),
-  getInstallSetupStatusMock: vi.fn(),
+  getBaseBuddyConfigSetupStatusMock: vi.fn(),
   getOptionalAuthenticatedUserWithAccountMock: vi.fn(),
   getProjectsPageBootstrapMock: vi.fn(),
-  isInstallSetupReadyMock: vi.fn(),
+  isBaseBuddyConfigSetupReadyMock: vi.fn(),
   redirectMock: vi.fn(),
 }));
 
@@ -28,10 +26,9 @@ vi.mock("@/lib/control-plane/server", () => ({
   getProjectsPageBootstrap: getProjectsPageBootstrapMock,
 }));
 
-vi.mock("@/lib/self-host/install-runtime", () => ({
-  getControlPlaneSchemaSetupSection: getControlPlaneSchemaSetupSectionMock,
-  getInstallSetupStatus: getInstallSetupStatusMock,
-  isInstallSetupReady: isInstallSetupReadyMock,
+vi.mock("@/lib/basebuddy-config/setup", () => ({
+  getBaseBuddyConfigSetupStatus: getBaseBuddyConfigSetupStatusMock,
+  isBaseBuddyConfigSetupReady: isBaseBuddyConfigSetupReadyMock,
 }));
 
 const readySetupStatus = {
@@ -43,20 +40,15 @@ const readySetupStatus = {
       title: "App configuration",
     },
   ],
-  topology: "split",
+  configPath: "/repo/basebuddy.config.json",
+  topology: "config-file",
 };
 
 describe("home page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getControlPlaneSchemaSetupSectionMock.mockResolvedValue({
-      checks: [],
-      description: "Ready",
-      status: "ready",
-      title: "BaseBuddy tables",
-    });
-    getInstallSetupStatusMock.mockReturnValue(readySetupStatus);
-    isInstallSetupReadyMock.mockReturnValue(true);
+    getBaseBuddyConfigSetupStatusMock.mockResolvedValue(readySetupStatus);
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(true);
     getOptionalAuthenticatedUserWithAccountMock.mockResolvedValue({
       account: null,
       user: null,
@@ -76,8 +68,8 @@ describe("home page", () => {
   });
 
   it("sends incomplete installs to setup before checking authentication", async () => {
-    isInstallSetupReadyMock.mockReturnValue(false);
-    getInstallSetupStatusMock.mockReturnValue({
+    isBaseBuddyConfigSetupReadyMock.mockReturnValue(false);
+    getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
       sections: [
         {
           checks: [],
@@ -86,7 +78,8 @@ describe("home page", () => {
           title: "App configuration",
         },
       ],
-      topology: "invalid",
+      configPath: "/repo/basebuddy.config.json",
+      topology: "config-file",
     });
 
     const HomePage = (await import("@/app/page")).default;

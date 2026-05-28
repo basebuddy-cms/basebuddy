@@ -15,7 +15,6 @@ import {
 } from "@/lib/control-plane/member-invitations";
 import { formatProjectDate } from "@/lib/control-plane/utils";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
-import { createClient } from "@/lib/supabase/client";
 
 type ProjectMemberInvitationViewProps = {
   accountEmail: string | null;
@@ -96,11 +95,12 @@ export function ProjectMemberInvitationView({
     setSwitchingAccount(true);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signOut();
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error("Could not switch accounts right now.");
       }
 
       window.location.assign(loginPath);
@@ -206,7 +206,7 @@ export function ProjectMemberInvitationView({
           <Mail className="h-4 w-4" />
           <AlertTitle>Sign in or create your account first</AlertTitle>
           <AlertDescription>
-            BaseBuddy will send a one-time login link, and you&apos;ll come straight back to this invitation after you verify it.
+            Sign in with the invited email and password, and you&apos;ll come straight back to this invitation.
           </AlertDescription>
         </Alert>
       ) : null}

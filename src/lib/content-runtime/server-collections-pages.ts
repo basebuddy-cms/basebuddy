@@ -14,7 +14,7 @@ import {
   type ContentTag,
   createEmptyContentCategoriesPage,
   createEmptyContentCollectionPage,
-  ensureContentPlaneConnection,
+  ensureContentDatabaseConnection,
 } from "./server-collections-shared";
 
 const createContentCollectionsAdapter = (
@@ -54,7 +54,7 @@ export const getContentCategoriesPage = async ({
     return createEmptyContentCategoriesPage({ page, pageSize });
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
@@ -100,7 +100,7 @@ export const getContentTagsPage = async ({
     return createEmptyContentCollectionPage({ page, pageSize });
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
@@ -141,7 +141,7 @@ export const getContentAuthorsPage = async ({
     return createEmptyContentCollectionPage({ page, pageSize });
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
   dependencies.ensureAuthorManagementPermission(context);
   const authorAssignmentsByAuthorId =
     await dependencies.getProjectPostAuthorAssignments(projectId);
@@ -184,7 +184,7 @@ export const getContentAuthorOptions = async ({
     return [];
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
@@ -224,7 +224,7 @@ export const getContentMediaPage = async ({
     return createEmptyContentCollectionPage({ page, pageSize });
   }
 
-  ensureContentPlaneConnection(context);
+  ensureContentDatabaseConnection(context);
 
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);

@@ -222,6 +222,7 @@ describe("ProjectEditorPostsCollectionPage", () => {
     );
 
     expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    expect(screen.getByRole("table")).toHaveClass("min-w-[920px]");
     expect(screen.getByText(longTitle)).toHaveClass("[overflow-wrap:anywhere]");
   });
 

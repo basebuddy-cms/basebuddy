@@ -3,42 +3,34 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { KeyRound } from "lucide-react";
 import { toast } from "sonner";
+
 import { BaseBuddyWordmark } from "@/components/basebuddy-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
-import {
-  DEFAULT_INSTALL_AUTH_PROVIDERS,
-  type InstallAuthProvider,
-} from "@/lib/self-host/auth-provider-options";
-import { buildBrowserRedirectUrl } from "@/lib/supabase/auth";
-import { createClient } from "@/lib/supabase/client";
-import { Github, KeyRound, Mail } from "lucide-react";
 
 type LoginFormProps = {
-  enabledProviders?: InstallAuthProvider[];
+  demoAccess?: {
+    email: string;
+    password: string;
+  } | null;
   initialEmail?: string;
   initialError?: string | null;
   nextPath: string;
 };
 
 export function LoginForm({
-  enabledProviders = DEFAULT_INSTALL_AUTH_PROVIDERS,
+  demoAccess = null,
   initialEmail = "",
   initialError = null,
   nextPath,
 }: LoginFormProps) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
-  const [pendingAction, setPendingAction] = useState<"github" | "google" | "email" | "password" | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const router = useRouter();
-  const canUseGithub = enabledProviders.includes("github");
-  const canUseGoogle = enabledProviders.includes("google");
-  const canUseMagicLink = enabledProviders.includes("magic_link");
-  const canUsePassword = enabledProviders.includes("password");
-  const hasOauthProviders = canUseGithub || canUseGoogle;
-  const hasEmailProviders = canUseMagicLink || canUsePassword;
 
   useEffect(() => {
     if (initialEmail) {
@@ -49,68 +41,10 @@ export function LoginForm({
       return;
     }
 
-    if (initialError === "auth_callback_error") {
-      toast.error("Could not complete sign-in.");
-      return;
-    }
-
-    if (initialError === "email_confirm_error") {
-      toast.error("Could not verify the email sign-in link.");
-    }
+    toast.error("Could not complete sign-in.");
   }, [initialEmail, initialError]);
 
-  const signInWithProvider = async (provider: "github" | "google") => {
-    try {
-      setPendingAction(provider);
-
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: buildBrowserRedirectUrl(`/auth/callback?next=${encodeURIComponent(nextPath)}`),
-        },
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      toast.error(getProductionErrorMessage(error, "Could not start sign-in."));
-      setPendingAction(null);
-    }
-  };
-
-  const signInWithEmail = async () => {
-    if (!email.trim()) {
-      toast.error("Enter an email address first.");
-      return;
-    }
-
-    try {
-      setPendingAction("email");
-
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: buildBrowserRedirectUrl(`/auth/confirm?next=${encodeURIComponent(nextPath)}`),
-        },
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      toast.success("Check your email for the sign-in link.");
-      setEmail("");
-    } catch (error) {
-      toast.error(getProductionErrorMessage(error, "Could not send the sign-in link."));
-    } finally {
-      setPendingAction(null);
-    }
-  };
-
-  const signInWithPassword = async () => {
+  const handlePasswordSignIn = async () => {
     if (!email.trim()) {
       toast.error("Enter an email address first.");
       return;
@@ -121,25 +55,39 @@ export function LoginForm({
       return;
     }
 
-    try {
-      setPendingAction("password");
+    setIsSigningIn(true);
 
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+    try {
+      const response = await fetch("/api/auth/login", {
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
       });
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error("Could not sign in.");
       }
 
       router.replace(nextPath);
+      router.refresh();
     } catch (error) {
-      toast.error(getProductionErrorMessage(error, "Could not sign in with email and password."));
-    } finally {
-      setPendingAction(null);
+      toast.error(getProductionErrorMessage(error, "Could not sign in."));
+      setIsSigningIn(false);
     }
+  };
+
+  const fillDemoCredentials = () => {
+    if (!demoAccess) {
+      return;
+    }
+
+    setEmail(demoAccess.email);
+    setPassword(demoAccess.password);
   };
 
   return (
@@ -152,52 +100,37 @@ export function LoginForm({
             <BaseBuddyWordmark className="h-14 w-auto" />
           </Link>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Sign in to your self-hosted workspace</p>
+          <p className="mt-2 text-sm text-muted-foreground">Access your projects and content.</p>
         </div>
 
-        {hasOauthProviders ? (
-          <div className="space-y-3">
-            {canUseGithub ? (
-              <Button
-                variant="outline"
-                className="w-full justify-center gap-2"
-                size="lg"
-                onClick={() => signInWithProvider("github")}
-                disabled={pendingAction !== null}
-              >
-                <Github className="h-4 w-4" />
-                Continue with GitHub
-              </Button>
-            ) : null}
-            {canUseGoogle ? (
-              <Button
-                variant="outline"
-                className="w-full justify-center gap-2"
-                size="lg"
-                onClick={() => signInWithProvider("google")}
-                disabled={pendingAction !== null}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24">
-                  <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                  <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                Continue with Google
-              </Button>
-            ) : null}
+        {demoAccess ? (
+          <div className="mb-6 rounded-lg border border-primary/25 bg-primary/5 p-4 text-left">
+            <div className="text-sm font-semibold text-foreground">Public demo access</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              This demo resets regularly. Use sample content only, not private data.
+            </p>
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Email</span>
+                <span className="font-mono text-foreground">{demoAccess.email}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Password</span>
+                <span className="font-mono text-foreground">{demoAccess.password}</span>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4 w-full"
+              onClick={fillDemoCredentials}
+              disabled={isSigningIn}
+            >
+              Fill demo credentials
+            </Button>
           </div>
         ) : null}
 
-        {hasOauthProviders && hasEmailProviders ? (
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-        ) : null}
-
-        {hasEmailProviders ? (
         <div className="space-y-4">
           <div>
             <label
@@ -213,60 +146,40 @@ export function LoginForm({
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="border-border"
+              disabled={isSigningIn}
             />
           </div>
-          {canUsePassword ? (
-            <>
-              <div>
-                <label
-                  htmlFor="login-password"
-                  className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                >
-                  Password
-                </label>
-                <Input
-                  id="login-password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="border-border"
-                />
-              </div>
-              <Button
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={signInWithPassword}
-                disabled={pendingAction !== null}
-              >
-                <KeyRound className="h-4 w-4 mr-2" />
-                Sign in with Password
-              </Button>
-            </>
-          ) : null}
-          {canUseMagicLink ? (
-            <Button
-              variant="hero"
-              className="w-full"
-              size="lg"
-              onClick={signInWithEmail}
-              disabled={pendingAction !== null}
+          <div>
+            <label
+              htmlFor="login-password"
+              className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted-foreground"
             >
-              <Mail className="h-4 w-4 mr-2" />
-              Email me a Sign-In Link
-            </Button>
-          ) : null}
-        </div>
-        ) : (
-          <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
-            No sign-in methods are enabled yet. Open setup and choose at least one method before
-            inviting users.
+              Password
+            </label>
+            <Input
+              id="login-password"
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="border-border"
+              disabled={isSigningIn}
+            />
           </div>
-        )}
+          <Button
+            variant="hero"
+            className="w-full"
+            size="lg"
+            onClick={handlePasswordSignIn}
+            disabled={isSigningIn}
+          >
+            <KeyRound className="h-4 w-4 mr-2" />
+            {isSigningIn ? "Signing in..." : "Sign in"}
+          </Button>
+        </div>
 
         <p className="text-xs text-muted-foreground text-center mt-8">
-          Use your install account password, or request a sign-in link if email delivery is configured.
+          Use your BaseBuddy account email and password.
         </p>
       </div>
     </div>

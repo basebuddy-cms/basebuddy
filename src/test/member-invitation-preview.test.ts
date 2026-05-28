@@ -1,51 +1,100 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const { createAdminClientMock, rpcMock } = vi.hoisted(() => ({
-  createAdminClientMock: vi.fn(),
-  rpcMock: vi.fn(),
-}));
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { getBaseBuddyConfigPath } from "@/lib/basebuddy-config/paths";
+import {
+  createDefaultBaseBuddyConfig,
+  type BaseBuddyConfig,
+} from "@/lib/basebuddy-config/schema";
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: createAdminClientMock,
+const { createAdminClientMock } = vi.hoisted(() => ({
+  createAdminClientMock: vi.fn(() => {
+    throw new Error("Supabase admin client should not be used for invitation preview.");
+  }),
 }));
 
+
+const fixedNow = "2026-05-28T00:00:00.000Z";
+const authSecret = "local-auth-secret-value-with-32-plus-chars";
+
 describe("member invitation preview", () => {
-  beforeEach(() => {
+  const originalCwd = process.cwd();
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "basebuddy-invitation-preview-"));
+    process.chdir(tempDir);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(fixedNow));
     vi.resetModules();
     vi.clearAllMocks();
 
-    createAdminClientMock.mockReturnValue({
-      rpc: rpcMock,
-    });
+    await writeFile(
+      getBaseBuddyConfigPath(),
+      JSON.stringify(createSeedConfig(), null, 2),
+      "utf8",
+    );
   });
 
-  it("loads the invite preview through the RPC and maps it for the public page", async () => {
-    rpcMock.mockResolvedValue({
-      data: [
-        {
-          accepted_at: null,
-          author_scopes: [{ cms_author_id: "author-1" }],
-          expires_at: "2026-06-03T10:00:00.000Z",
-          invited_email: "writer@example.com",
-          project_id: "project-1",
-          project_name: "Demo Project",
-          project_slug: "demo-project",
-          revoked_at: null,
-          role_keys: ["author"],
-        },
-      ],
-      error: null,
-    });
+  afterEach(async () => {
+    vi.useRealTimers();
+    process.chdir(originalCwd);
+    await rm(tempDir, { force: true, recursive: true });
+  });
 
+  const createSeedConfig = (): BaseBuddyConfig => ({
+    ...createDefaultBaseBuddyConfig({
+      now: fixedNow,
+    }),
+    projects: [
+      {
+        createdAt: fixedNow,
+        createdBy: "user-owner",
+        id: "project-1",
+        mapping: null,
+        mappingRevisions: [],
+        members: [],
+        name: "Demo Project",
+        sidebar: null,
+        sidebarRevisions: [],
+        slug: "demo-project",
+        status: "active",
+        updatedAt: fixedNow,
+        websiteUrl: null,
+      },
+    ],
+    invitations: [
+      {
+        acceptedAt: null,
+        acceptedBy: null,
+        authorScopes: [{ cmsAuthorId: "author-1", canPublish: false }],
+        createdAt: fixedNow,
+        createdBy: "user-owner",
+        expiresAt: "2026-06-03T10:00:00.000Z",
+        id: "invitation-1",
+        invitedEmail: "writer@example.com",
+        projectId: "project-1",
+        publicToken: "invite-token-123",
+        revokedAt: null,
+        revokedBy: null,
+        roles: ["author"],
+      },
+    ],
+  });
+
+  it("loads the invite preview from config and maps it for the public page", async () => {
     const { getProjectMemberInvitationPreview } = await import(
       "@/lib/control-plane/member-invitations-server"
     );
 
     await expect(getProjectMemberInvitationPreview(" invite-token-123 ")).resolves.toEqual({
       acceptedAt: null,
-      authorScopes: [{ cmsAuthorId: "author-1", canPublish: true }],
+      authorScopes: [{ cmsAuthorId: "author-1", canPublish: false }],
       expiresAt: "2026-06-03T10:00:00.000Z",
       invitePath: "/invite/invite-token-123",
       invitedEmail: "writer@example.com",
@@ -56,29 +105,15 @@ describe("member invitation preview", () => {
       roles: ["author"],
       status: "pending",
     });
-
-    expect(rpcMock).toHaveBeenCalledWith("get_project_member_invitation_preview", {
-      p_public_token: "invite-token-123",
-    });
+    expect(createAdminClientMock).not.toHaveBeenCalled();
   });
 
-  it("returns null and logs when the preview RPC fails", async () => {
-    const consoleErrorMock = vi.spyOn(console, "error").mockImplementation(() => {});
-    rpcMock.mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST000",
-        message: "preview lookup failed",
-      },
-    });
-
+  it("returns null when the token is missing or unknown", async () => {
     const { getProjectMemberInvitationPreview } = await import(
       "@/lib/control-plane/member-invitations-server"
     );
 
-    await expect(getProjectMemberInvitationPreview("invite-token-123")).resolves.toBeNull();
-    expect(consoleErrorMock).toHaveBeenCalled();
-
-    consoleErrorMock.mockRestore();
+    await expect(getProjectMemberInvitationPreview(" ")).resolves.toBeNull();
+    await expect(getProjectMemberInvitationPreview("missing-token")).resolves.toBeNull();
   });
 });

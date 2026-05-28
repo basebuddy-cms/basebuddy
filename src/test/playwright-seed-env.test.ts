@@ -5,15 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   resolvePlaywrightSeedDatabaseUrl,
-  resolvePlaywrightSeedControlDatabaseUrl,
   resolvePlaywrightSeedContentSupabaseSecretKey,
   resolvePlaywrightSeedContentSupabaseUrl,
-  resolvePlaywrightSeedPublishableKey,
   resolvePlaywrightSeedRootCertificate,
   resolvePlaywrightSeedRootCertificateFile,
   resolvePlaywrightSeedProjectName,
   resolvePlaywrightSeedProjectSlug,
-  resolvePlaywrightSeedSupabaseUrl,
   shouldUsePlaywrightSeedDatabaseSsl,
 } from "../../e2e/support/seed-env";
 
@@ -40,11 +37,10 @@ describe("playwright seed env helpers", () => {
     expect(resolvePlaywrightSeedProjectSlug(env)).toBeNull();
   });
 
-  it("prefers the content-plane database env for the seeded content fixtures", () => {
+  it("prefers the content database env for the seeded content fixtures", () => {
     expect(
       resolvePlaywrightSeedDatabaseUrl({
         BASEBUDDY_CONTENT_DATABASE_URL: "postgresql://content",
-        BASEBUDDY_CONTROL_DATABASE_URL: "postgresql://control",
         DATABASE_URL: "postgresql://primary",
         POSTGRES_URL: "postgresql://fallback-postgres",
         SUPABASE_DATABASE_URL: "postgresql://fallback-supabase",
@@ -53,24 +49,9 @@ describe("playwright seed env helpers", () => {
 
     expect(
       resolvePlaywrightSeedDatabaseUrl({
-        BASEBUDDY_CONTROL_DATABASE_URL: "postgresql://control",
+        DATABASE_URL: "postgresql://primary",
       }),
-    ).toBe("postgresql://control");
-  });
-
-  it("prefers the control-plane database env for seeded BaseBuddy control rows", () => {
-    expect(
-      resolvePlaywrightSeedControlDatabaseUrl({
-        BASEBUDDY_CONTENT_DATABASE_URL: "postgresql://content",
-        BASEBUDDY_CONTROL_DATABASE_URL: "postgresql://control",
-      }),
-    ).toBe("postgresql://control");
-
-    expect(
-      resolvePlaywrightSeedControlDatabaseUrl({
-        BASEBUDDY_CONTENT_DATABASE_URL: "postgresql://content",
-      }),
-    ).toBe("postgresql://content");
+    ).toBeNull();
   });
 
   it("does not accept legacy install database env fallbacks for the seed harness", () => {
@@ -94,7 +75,6 @@ describe("playwright seed env helpers", () => {
       resolvePlaywrightSeedRootCertificate({
         PLAYWRIGHT_DATABASE_ROOT_CERTIFICATE: "playwright-inline-cert",
         BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE: "content-inline-cert",
-        BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE: "control-inline-cert",
         SUPABASE_SESSION_POOLER_ROOT_CERTIFICATE: "runtime-inline-cert",
       }),
     ).toBe("playwright-inline-cert");
@@ -102,23 +82,20 @@ describe("playwright seed env helpers", () => {
     expect(
       resolvePlaywrightSeedRootCertificate({
         BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE: "content-inline-cert",
-        BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE: "control-inline-cert",
         SUPABASE_SESSION_POOLER_ROOT_CERTIFICATE: "runtime-inline-cert",
       }),
     ).toBe("content-inline-cert");
 
     expect(
       resolvePlaywrightSeedRootCertificate({
-        BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE: "control-inline-cert",
         SUPABASE_SESSION_POOLER_ROOT_CERTIFICATE: "runtime-inline-cert",
       }),
-    ).toBe("control-inline-cert");
+    ).toBeNull();
 
     expect(
       resolvePlaywrightSeedRootCertificateFile({
         PLAYWRIGHT_DATABASE_ROOT_CERTIFICATE_FILE: "./certs/playwright.pem",
         BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/content.pem",
-        BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/control.pem",
         SUPABASE_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/runtime.pem",
       }),
     ).toBe("./certs/playwright.pem");
@@ -126,66 +103,43 @@ describe("playwright seed env helpers", () => {
     expect(
       resolvePlaywrightSeedRootCertificateFile({
         BASEBUDDY_CONTENT_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/content.pem",
-        BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/control.pem",
         SUPABASE_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/runtime.pem",
       }),
     ).toBe("./certs/content.pem");
 
     expect(
       resolvePlaywrightSeedRootCertificateFile({
-        BASEBUDDY_CONTROL_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/control.pem",
         SUPABASE_SESSION_POOLER_ROOT_CERTIFICATE_FILE: "./certs/runtime.pem",
       }),
-    ).toBe("./certs/control.pem");
+    ).toBeNull();
   });
 
-  it("prefers BaseBuddy control-plane Supabase envs for the seeded browser harness", () => {
-    expect(
-      resolvePlaywrightSeedSupabaseUrl({
-        BASEBUDDY_CONTROL_SUPABASE_URL: "https://control.supabase.co",
-        NEXT_PUBLIC_BASEBUDDY_SUPABASE_URL: "https://canonical.supabase.co",
-        NEXT_PUBLIC_SUPABASE_URL: "https://legacy.supabase.co",
-      }),
-    ).toBe("https://control.supabase.co");
-
-    expect(
-      resolvePlaywrightSeedPublishableKey({
-        BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_control",
-        NEXT_PUBLIC_BASEBUDDY_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_canonical",
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_legacy",
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: "sb_anon_legacy",
-      }),
-    ).toBe("sb_publishable_control");
-  });
-
-  it("prefers BaseBuddy content-plane Supabase envs for seeded storage fixtures", () => {
+  it("prefers BaseBuddy Supabase envs for seeded image and file fixtures", () => {
     expect(
       resolvePlaywrightSeedContentSupabaseUrl({
-        BASEBUDDY_CONTENT_SUPABASE_URL: "http://127.0.0.1:56321",
-        BASEBUDDY_CONTROL_SUPABASE_URL: "https://control.supabase.co",
+        BASEBUDDY_SUPABASE_URL: "http://127.0.0.1:56321",
       }),
     ).toBe("http://127.0.0.1:56321");
 
     expect(
       resolvePlaywrightSeedContentSupabaseSecretKey({
-        BASEBUDDY_CONTENT_SUPABASE_SECRET_KEY: "content-secret",
-        BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY: "control-secret",
+        BASEBUDDY_SUPABASE_SECRET_KEY: "storage-secret",
       }),
-    ).toBe("content-secret");
+    ).toBe("storage-secret");
   });
 
-  it("falls back to control-plane Supabase envs for seeded storage in unified installs", () => {
+  it("does not fall back to app-state Supabase envs for seeded storage", () => {
     expect(
       resolvePlaywrightSeedContentSupabaseUrl({
-        BASEBUDDY_CONTROL_SUPABASE_URL: "https://control.supabase.co",
+        [`BASEBUDDY_${"CONTROL"}_SUPABASE_URL`]: "https://control.supabase.co",
       }),
-    ).toBe("https://control.supabase.co");
+    ).toBeNull();
 
     expect(
       resolvePlaywrightSeedContentSupabaseSecretKey({
-        BASEBUDDY_CONTROL_SUPABASE_SECRET_KEY: "control-secret",
+        [`BASEBUDDY_${"CONTROL"}_SUPABASE_SECRET_KEY`]: "control-secret",
       }),
-    ).toBe("control-secret");
+    ).toBeNull();
   });
 
   it("keeps schema-zoo smoke scripts aligned with the Playwright owner account", () => {
@@ -214,13 +168,16 @@ describe("playwright seed env helpers", () => {
     const seedScript = readFileSync(join(process.cwd(), "e2e", "setup", "seed.ts"), "utf8");
 
     expect(seedScript).toContain("createSeedProjectWithDatabase");
-    expect(seedScript).toContain("connectionString: env.controlDatabaseUrl");
+    expect(seedScript).toContain("createBaseBuddyConfigUser");
+    expect(seedScript).toContain("saveConfigProjectContentMappingRevision");
     expect(seedScript).toContain("connectionString: env.contentDatabaseUrl");
-    expect(seedScript).toContain("cachedSeedState.controlPlaneUrl !== env.appUrl");
+    expect(seedScript).toContain("basebuddy.config.json");
     expect(seedScript).toContain("Connect seed database");
     expect(seedScript).toContain("ECHECKOUTTIMEOUT");
     expect(seedScript).not.toContain("signInAsUser");
     expect(seedScript).not.toContain("signInWithPassword");
+    expect(seedScript).not.toContain(["basebuddy", "project"].join("_"));
+    expect(seedScript).not.toContain(["basebuddy", "profiles"].join("_"));
   });
 
   it("enables SSL automatically for Supabase pooler seed database URLs", () => {
@@ -256,20 +213,6 @@ describe("playwright seed env helpers", () => {
   });
 
   it("ignores public example placeholders without falling back to legacy seed envs", () => {
-    expect(
-      resolvePlaywrightSeedSupabaseUrl({
-        BASEBUDDY_CONTROL_SUPABASE_URL: "https://your-control-project-ref.supabase.co",
-        NEXT_PUBLIC_BASEBUDDY_SUPABASE_URL: "https://real.supabase.co",
-      }),
-    ).toBeNull();
-
-    expect(
-      resolvePlaywrightSeedPublishableKey({
-        BASEBUDDY_CONTROL_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_xxxxxxxxxxxxxxxxxxxx",
-        NEXT_PUBLIC_BASEBUDDY_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_real",
-      }),
-    ).toBeNull();
-
     expect(
       resolvePlaywrightSeedDatabaseUrl({
         BASEBUDDY_CONTENT_DATABASE_URL:

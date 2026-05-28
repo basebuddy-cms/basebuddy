@@ -32,7 +32,7 @@ type JsonParseFailure = {
   errorResponse: NextResponse;
 };
 
-const getClientIp = (request: Request) => {
+export const getClientIp = (request: Request) => {
   const forwardedFor = request.headers.get("x-forwarded-for");
 
   if (forwardedFor?.trim()) {
