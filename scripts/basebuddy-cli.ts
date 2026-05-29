@@ -42,12 +42,29 @@ import { createDefaultContentPostSidebarConfig } from "../src/lib/content-runtim
 import {
   CONTENT_BINDING_STATUS_VALUES,
   CONTENT_MEDIA_STORAGE_PROVIDER_VALUES,
+  CONTENT_MAPPING_ENTITY_KEYS,
+  CONTENT_MAPPING_WORKFLOW_MODE_VALUES,
   normalizeContentMappingConfig,
   type ContentBindingStatus,
+  type ContentCustomFieldMapping,
+  type ContentEditorField,
+  type ContentEntityMapping,
+  type ContentMappingConfig,
+  type ContentMappingEntityKey,
+  type ContentMappingFieldKind,
   type ContentMediaStorageProvider,
+  type ContentPostWorkflowMapping,
 } from "../src/lib/content-runtime/mapping";
+import {
+  buildContentAutoMappingResult,
+  type ContentIntrospectedColumn,
+  type ContentIntrospectedForeignKey,
+  type ContentIntrospectedTable,
+  type ContentSchemaIntrospection,
+} from "../src/lib/content-runtime/introspection";
 
 type BaseBuddyCliDependencies = {
+  introspectContentSchema?: (options: CliSchemaInspectOptions) => Promise<ContentSchemaIntrospection>;
   now?: () => Date | string;
   queryDatabase?: (connectionString: string) => Promise<void>;
   randomBytes?: (byteCount: number) => Buffer;
@@ -59,6 +76,12 @@ type BaseBuddyCliDependencies = {
 type ParsedArguments = {
   options: Record<string, boolean | string>;
   positionals: string[];
+};
+
+type CliSchemaInspectOptions = {
+  includeSamples: boolean;
+  schema?: string | null;
+  tableRefs?: string[];
 };
 
 const defaultStdout = (chunk: string) => {
@@ -204,6 +227,693 @@ const parseAuthorScopes = (value: string | null) =>
       cmsAuthorId: cmsAuthorId.trim(),
     };
   });
+
+const parseTableRef = (value: string, fallbackSchema = "public") => {
+  const normalized = value.trim();
+  const [schema, ...tableParts] = normalized.split(".");
+  const table = tableParts.length ? tableParts.join(".").trim() : normalized;
+
+  return {
+    schema: tableParts.length ? schema.trim() || fallbackSchema : fallbackSchema,
+    table,
+  };
+};
+
+const toTableRef = ({ schema, table }: { schema: string; table: string }) => `${schema}.${table}`;
+
+const getSchemaInspectOptions = (parsed: ParsedArguments): CliSchemaInspectOptions => {
+  const schema = getOptionalStringOption(parsed, "schema") ?? null;
+  const fallbackSchema = schema?.trim() || "public";
+  const tableRefs = parseCommaList(getOptionalStringOption(parsed, "table")).map((table) =>
+    toTableRef(parseTableRef(table, fallbackSchema)),
+  );
+
+  return {
+    includeSamples: parsed.options.samples !== false,
+    schema: schema?.trim() || null,
+    tableRefs,
+  };
+};
+
+const getContentDatabaseUrl = () => {
+  const value = process.env.BASEBUDDY_CONTENT_DATABASE_URL?.trim();
+
+  if (!value) {
+    throw new Error("BASEBUDDY_CONTENT_DATABASE_URL is required for schema inspection.");
+  }
+
+  return value;
+};
+
+const quotePostgresIdentifier = (value: string) => `"${value.replace(/"/g, "\"\"")}"`;
+
+const buildSchemaWhereClause = ({
+  options,
+  schemaColumn,
+  tableColumn,
+  startIndex = 1,
+}: {
+  options: CliSchemaInspectOptions;
+  schemaColumn: string;
+  startIndex?: number;
+  tableColumn: string;
+}) => {
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+
+  if (options.schema) {
+    params.push(options.schema);
+    clauses.push(`${schemaColumn} = $${startIndex + params.length - 1}`);
+  }
+
+  if (options.tableRefs?.length) {
+    const tableClauses = options.tableRefs.map((tableRef) => {
+      const parsed = parseTableRef(tableRef, options.schema ?? "public");
+      const schemaParam = startIndex + params.push(parsed.schema) - 1;
+      const tableParam = startIndex + params.push(parsed.table) - 1;
+      return `(${schemaColumn} = $${schemaParam} and ${tableColumn} = $${tableParam})`;
+    });
+    clauses.push(`(${tableClauses.join(" or ")})`);
+  }
+
+  return {
+    clause: clauses.length ? ` and ${clauses.join(" and ")}` : "",
+    params,
+  };
+};
+
+const normalizeDatabaseSampleValue = (value: unknown): unknown => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return value.toString("base64");
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeDatabaseSampleValue(entry));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        normalizeDatabaseSampleValue(entry),
+      ]),
+    );
+  }
+
+  return value;
+};
+
+const getColumnKindHint = (column: ContentIntrospectedColumn): ContentMappingFieldKind => {
+  const name = column.name.toLowerCase();
+  const type = column.dataType.toLowerCase();
+
+  if (column.isJson) return "json";
+  if (column.isArray) return "array";
+  if (name.includes("slug")) return "slug";
+  if (type.includes("bool")) return "boolean";
+  if (type.includes("timestamp")) return "datetime";
+  if (type === "date") return "date";
+  if (type.includes("int") || type.includes("numeric") || type.includes("double") || type.includes("real")) {
+    return "number";
+  }
+  if (column.enumValues?.length) return "enum";
+  if (name.endsWith("_md") || name.includes("markdown")) return "markdown";
+  if (name.endsWith("_html") || name.includes("html")) return "html";
+  if (name.includes("content") || name.includes("body") || name.includes("description")) return "plain_text";
+
+  return "text";
+};
+
+const humanizeColumnName = (value: string) =>
+  value
+    .replace(/_id$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const findInspectedTable = (
+  introspection: ContentSchemaIntrospection,
+  tableRef: string,
+  fallbackSchema = "public",
+) => {
+  const parsed = parseTableRef(tableRef, fallbackSchema);
+  return introspection.tables.find((table) => table.schema === parsed.schema && table.name === parsed.table) ?? null;
+};
+
+const findInspectedColumn = (table: ContentIntrospectedTable | null, columnName: string | null | undefined) =>
+  table?.columns.find((column) => column.name === columnName) ?? null;
+
+const createEditorFieldFromColumn = ({
+  column,
+  id,
+  kind,
+  label,
+  path,
+}: {
+  column: string;
+  id?: string;
+  kind: ContentMappingFieldKind;
+  label?: string;
+  path?: string | null;
+}): ContentEditorField => ({
+  column,
+  id: id ?? column.replace(/[^a-zA-Z0-9_-]+/g, "_"),
+  kind,
+  label: label ?? humanizeColumnName(column),
+  path: path ?? null,
+  placeholder: null,
+  required: false,
+  visible: true,
+});
+
+type CliMappingFieldHint = {
+  column: string;
+  id?: string;
+  kind?: ContentMappingFieldKind;
+  label?: string;
+  path?: string | null;
+};
+
+type CliMappingHints = {
+  contentFields?: CliMappingFieldHint[];
+  customFields?: CliMappingFieldHint[];
+  excerptColumn?: string;
+  featuredImageUrlColumn?: string;
+  postsTable?: string;
+  slugColumn?: string;
+  titleColumn?: string;
+  workflow?: Partial<ContentPostWorkflowMapping>;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const getStringFromRecord = (record: Record<string, unknown>, key: string) =>
+  typeof record[key] === "string" ? record[key].trim() : "";
+
+const normalizeMappingHints = (value: unknown): CliMappingHints => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const normalizeFieldHint = (entry: unknown): CliMappingFieldHint | null => {
+    if (!isRecord(entry)) {
+      return null;
+    }
+
+    const column = getStringFromRecord(entry, "column");
+
+    if (!column) {
+      return null;
+    }
+
+    const kind = getStringFromRecord(entry, "kind");
+
+    return {
+      column,
+      id: getStringFromRecord(entry, "id") || undefined,
+      kind: kind ? (kind as ContentMappingFieldKind) : undefined,
+      label: getStringFromRecord(entry, "label") || undefined,
+      path: getStringFromRecord(entry, "path") || null,
+    };
+  };
+  const workflow = isRecord(value.workflow) ? value.workflow : null;
+
+  return {
+    contentFields: Array.isArray(value.contentFields)
+      ? value.contentFields.map(normalizeFieldHint).filter(Boolean) as CliMappingFieldHint[]
+      : undefined,
+    customFields: Array.isArray(value.customFields)
+      ? value.customFields.map(normalizeFieldHint).filter(Boolean) as CliMappingFieldHint[]
+      : undefined,
+    excerptColumn: getStringFromRecord(value, "excerptColumn") || undefined,
+    featuredImageUrlColumn: getStringFromRecord(value, "featuredImageUrlColumn") || undefined,
+    postsTable: getStringFromRecord(value, "postsTable") || undefined,
+    slugColumn: getStringFromRecord(value, "slugColumn") || undefined,
+    titleColumn: getStringFromRecord(value, "titleColumn") || undefined,
+    workflow: workflow
+      ? {
+          archivedValues: Array.isArray(workflow.archivedValues)
+            ? workflow.archivedValues.filter((entry): entry is string => typeof entry === "string")
+            : undefined,
+          customValues: Array.isArray(workflow.customValues)
+            ? workflow.customValues.filter((entry): entry is string => typeof entry === "string")
+            : undefined,
+          draftValues: Array.isArray(workflow.draftValues)
+            ? workflow.draftValues.filter((entry): entry is string => typeof entry === "string")
+            : undefined,
+          mode: CONTENT_MAPPING_WORKFLOW_MODE_VALUES.includes(workflow.mode as ContentPostWorkflowMapping["mode"])
+            ? workflow.mode as ContentPostWorkflowMapping["mode"]
+            : undefined,
+          publishedAtColumn: typeof workflow.publishedAtColumn === "string" ? workflow.publishedAtColumn : undefined,
+          publishedFlagColumn: typeof workflow.publishedFlagColumn === "string" ? workflow.publishedFlagColumn : undefined,
+          publishedValues: Array.isArray(workflow.publishedValues)
+            ? workflow.publishedValues.filter((entry): entry is string => typeof entry === "string")
+            : undefined,
+          statusColumn: typeof workflow.statusColumn === "string" ? workflow.statusColumn : undefined,
+        }
+      : undefined,
+  };
+};
+
+const createCustomFieldFromColumn = ({
+  column,
+  hint,
+  sampleRows,
+}: {
+  column: ContentIntrospectedColumn;
+  hint: CliMappingFieldHint;
+  sampleRows: Array<Record<string, unknown>>;
+}): ContentCustomFieldMapping => {
+  const sampleValues = sampleRows
+    .map((row) => row[column.name])
+    .filter((value) => value !== undefined && value !== null)
+    .slice(0, 3)
+    .map((value) => {
+      if (typeof value === "string") {
+        return value;
+      }
+
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    });
+
+  return {
+    allowedValues: column.enumValues,
+    column: column.name,
+    dataType: column.dataType,
+    defaultValue: column.defaultValue,
+    enabled: true,
+    isNullable: column.isNullable,
+    kind: hint.kind ?? getColumnKindHint(column),
+    label: hint.label ?? humanizeColumnName(column.name),
+    path: hint.path ?? null,
+    sampleValues,
+    sourceType: {
+      isArray: column.isArray,
+      isJson: column.isJson,
+      nativeType: column.udtName ?? column.dataType,
+    },
+  };
+};
+
+const applyMappingHints = (
+  mappingConfig: ContentMappingConfig,
+  introspection: ContentSchemaIntrospection,
+  hints: CliMappingHints,
+  inspectOptions: CliSchemaInspectOptions,
+) => {
+  const normalized = normalizeContentMappingConfig(mappingConfig);
+  const tableRef =
+    hints.postsTable ??
+    inspectOptions.tableRefs?.[0] ??
+    (normalized.entities.posts.source.schema && normalized.entities.posts.source.table
+      ? `${normalized.entities.posts.source.schema}.${normalized.entities.posts.source.table}`
+      : null);
+  const postsTable = tableRef ? findInspectedTable(introspection, tableRef, inspectOptions.schema ?? "public") : null;
+
+  if (postsTable) {
+    const posts = normalized.entities.posts;
+    posts.source = {
+      kind: postsTable.kind,
+      primaryKey: postsTable.primaryKey,
+      schema: postsTable.schema,
+      table: postsTable.name,
+    };
+    posts.status = "mapped";
+    posts.capabilities = {
+      browse: true,
+      create: postsTable.kind === "table",
+      delete: postsTable.kind === "table",
+      read: true,
+      update: postsTable.kind === "table",
+    };
+    posts.fields.id.column = postsTable.primaryKey;
+
+    const scalarHints = {
+      excerpt: hints.excerptColumn,
+      featuredImageUrl: hints.featuredImageUrlColumn,
+      slug: hints.slugColumn,
+      title: hints.titleColumn,
+    } satisfies Partial<Record<keyof ContentEntityMapping["fields"], string | undefined>>;
+
+    for (const [fieldKey, columnName] of Object.entries(scalarHints)) {
+      if (columnName && posts.fields[fieldKey]) {
+        posts.fields[fieldKey].column = columnName;
+      }
+    }
+
+    if (hints.contentFields?.length) {
+      posts.editorFields = hints.contentFields.map((hint) => {
+        const column = findInspectedColumn(postsTable, hint.column);
+        return createEditorFieldFromColumn({
+          column: hint.column,
+          id: hint.id,
+          kind: hint.kind ?? (column ? getColumnKindHint(column) : "plain_text"),
+          label: hint.label,
+          path: hint.path,
+        });
+      });
+    }
+
+    if (hints.customFields?.length) {
+      posts.customFields = hints.customFields
+        .map((hint) => {
+          const column = findInspectedColumn(postsTable, hint.column);
+          return column ? createCustomFieldFromColumn({ column, hint, sampleRows: postsTable.sampleRows }) : null;
+        })
+        .filter(Boolean) as ContentCustomFieldMapping[];
+    }
+
+    if (hints.workflow) {
+      posts.workflow = {
+        ...(posts.workflow ?? {
+          archivedValues: [],
+          customValues: [],
+          draftValues: [],
+          mode: "status",
+          publishedAtColumn: null,
+          publishedFlagColumn: null,
+          publishedValues: [],
+          statusColumn: null,
+        }),
+        ...hints.workflow,
+      };
+      posts.fields.status.column = posts.workflow.statusColumn ?? posts.workflow.publishedFlagColumn;
+      posts.fields.publishedAt.column = posts.workflow.publishedAtColumn;
+    }
+  }
+
+  return normalizeContentMappingConfig(normalized);
+};
+
+const getMappingSummary = (mappingConfig: ContentMappingConfig) => ({
+  entities: Object.fromEntries(
+    CONTENT_MAPPING_ENTITY_KEYS.map((entityKey) => {
+      const entity = mappingConfig.entities[entityKey];
+      const source = entity.source.schema && entity.source.table
+        ? `${entity.source.schema}.${entity.source.table}`
+        : null;
+      const mappedFields = Object.entries(entity.fields)
+        .filter(([, field]) => field.column || field.path || field.sourceRelation)
+        .map(([fieldKey, field]) => ({
+          column: field.column,
+          fieldKey,
+          kind: field.kind,
+          path: field.path,
+          semanticRole: field.semanticRole ?? null,
+        }));
+
+      return [
+        entityKey,
+        {
+          customFieldCount: entity.customFields.filter((field) => field.enabled).length,
+          editorFieldCount: entity.editorFields.filter((field) => field.visible).length,
+          mappedFields,
+          source,
+          status: entity.status,
+          workflow: entity.workflow,
+        },
+      ];
+    }),
+  ),
+  filesStorage: mappingConfig.filesStorage,
+  mediaStorage: mappingConfig.mediaStorage,
+  version: mappingConfig.version,
+});
+
+const getAgentSetupWorkflow = () => [
+  {
+    command: "pnpm basebuddy doctor",
+    purpose: "Check env, config, owner account, and database readiness.",
+  },
+  {
+    command: "pnpm basebuddy setup",
+    purpose: "Create basebuddy-data/basebuddy.config.json after env is ready.",
+  },
+  {
+    command: "pnpm basebuddy projects:create",
+    purpose: "Create the BaseBuddy project owned by a local user.",
+  },
+  {
+    command: "pnpm basebuddy schema:inspect",
+    purpose: "Inspect exact tables, columns, keys, enums, and sample rows from Postgres.",
+  },
+  {
+    command: "pnpm basebuddy mapping:draft",
+    purpose: "Generate valid mapping JSON from schema inspection and optional hints.",
+  },
+  {
+    command: "pnpm basebuddy mapping:explain",
+    purpose: "Review the generated mapping before saving it.",
+  },
+  {
+    command: "pnpm basebuddy mapping:set",
+    purpose: "Save the verified mapping to the project.",
+  },
+  {
+    command: "pnpm basebuddy sidebar:set",
+    purpose: "Optionally save a sidebar layout JSON file.",
+  },
+  {
+    command: "pnpm basebuddy storage:set",
+    purpose: "Optionally save non-secret media/files bucket metadata.",
+  },
+];
+
+const inspectContentSchema = async (
+  dependencies: BaseBuddyCliDependencies,
+  options: CliSchemaInspectOptions,
+): Promise<ContentSchemaIntrospection> => {
+  if (dependencies.introspectContentSchema) {
+    return dependencies.introspectContentSchema(options);
+  }
+
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: getContentDatabaseUrl() });
+
+  await client.connect();
+
+  try {
+    const tableFilter = buildSchemaWhereClause({
+      options,
+      schemaColumn: "n.nspname",
+      tableColumn: "c.relname",
+    });
+    const tablesResult = await client.query<{
+      object_kind: "table" | "view";
+      row_count_estimate: string | number | null;
+      schema_name: string;
+      table_name: string;
+    }>(
+      `
+        select
+          n.nspname as schema_name,
+          c.relname as table_name,
+          case when c.relkind = 'r' then 'table' else 'view' end as object_kind,
+          case when c.relkind = 'r' then greatest(c.reltuples, 0)::bigint::text else null end as row_count_estimate
+        from pg_class as c
+        inner join pg_namespace as n on n.oid = c.relnamespace
+        where c.relkind in ('r', 'v', 'm')
+          and n.nspname not in ('auth', 'extensions', 'graphql', 'graphql_public', 'information_schema', 'pg_catalog', 'pg_toast', 'realtime', 'storage', 'supabase_functions', 'supabase_migrations', 'vault')
+          and n.nspname not like 'pg_temp_%'
+          and n.nspname not like 'pg_toast_temp_%'
+          ${tableFilter.clause}
+        order by n.nspname, c.relname
+      `,
+      tableFilter.params,
+    );
+    const columnFilter = buildSchemaWhereClause({
+      options,
+      schemaColumn: "table_schema",
+      tableColumn: "table_name",
+    });
+    const constraintFilter = buildSchemaWhereClause({
+      options,
+      schemaColumn: "kcu.table_schema",
+      tableColumn: "kcu.table_name",
+    });
+    const columnsResult = await client.query<{
+      column_default: string | null;
+      column_name: string;
+      data_type: string;
+      is_generated: "ALWAYS" | "NEVER" | "YES" | "NO" | null;
+      is_nullable: "NO" | "YES";
+      table_name: string;
+      table_schema: string;
+      udt_name: string | null;
+    }>(
+      `
+        select table_schema, table_name, column_name, data_type, udt_name, is_nullable, is_generated, column_default
+        from information_schema.columns
+        where table_schema not in ('auth', 'extensions', 'graphql', 'graphql_public', 'information_schema', 'pg_catalog', 'pg_toast', 'realtime', 'storage', 'supabase_functions', 'supabase_migrations', 'vault')
+          and table_schema not like 'pg_temp_%'
+          and table_schema not like 'pg_toast_temp_%'
+          ${columnFilter.clause}
+        order by table_schema, table_name, ordinal_position
+      `,
+      columnFilter.params,
+    );
+    const primaryKeysResult = await client.query<{
+      column_name: string;
+      table_name: string;
+      table_schema: string;
+    }>(
+      `
+        select kcu.table_schema, kcu.table_name, kcu.column_name
+        from information_schema.table_constraints tc
+        join information_schema.key_column_usage kcu
+          on tc.constraint_name = kcu.constraint_name
+         and tc.constraint_schema = kcu.constraint_schema
+         and tc.table_schema = kcu.table_schema
+        where tc.constraint_type = 'PRIMARY KEY'
+          ${constraintFilter.clause}
+        order by kcu.table_schema, kcu.table_name, kcu.ordinal_position
+      `,
+      constraintFilter.params,
+    );
+    const foreignKeysResult = await client.query<{
+      column_name: string;
+      foreign_column_name: string;
+      foreign_table_name: string;
+      foreign_table_schema: string;
+      table_name: string;
+      table_schema: string;
+    }>(
+      `
+        select
+          kcu.table_schema,
+          kcu.table_name,
+          kcu.column_name,
+          ccu.table_schema as foreign_table_schema,
+          ccu.table_name as foreign_table_name,
+          ccu.column_name as foreign_column_name
+        from information_schema.table_constraints tc
+        join information_schema.key_column_usage kcu
+          on tc.constraint_name = kcu.constraint_name
+         and tc.constraint_schema = kcu.constraint_schema
+         and tc.table_schema = kcu.table_schema
+        join information_schema.constraint_column_usage ccu
+          on ccu.constraint_name = tc.constraint_name
+         and ccu.constraint_schema = tc.constraint_schema
+        where tc.constraint_type = 'FOREIGN KEY'
+          ${constraintFilter.clause}
+        order by kcu.table_schema, kcu.table_name, kcu.column_name
+      `,
+      constraintFilter.params,
+    );
+    const enumRows = await client.query<{
+      enum_label: string;
+      type_name: string;
+      type_schema: string;
+    }>(
+      `
+        select n.nspname as type_schema, t.typname as type_name, e.enumlabel as enum_label
+        from pg_type t
+        join pg_enum e on t.oid = e.enumtypid
+        join pg_namespace n on n.oid = t.typnamespace
+        order by n.nspname, t.typname, e.enumsortorder
+      `,
+    );
+    const enumValuesByType = new Map<string, string[]>();
+
+    for (const row of enumRows.rows) {
+      const key = `${row.type_schema}.${row.type_name}`;
+      enumValuesByType.set(key, [...(enumValuesByType.get(key) ?? []), row.enum_label]);
+    }
+
+    const primaryKeyByTable = new Map<string, string>();
+
+    for (const row of primaryKeysResult.rows) {
+      const key = `${row.table_schema}.${row.table_name}`;
+
+      if (!primaryKeyByTable.has(key)) {
+        primaryKeyByTable.set(key, row.column_name);
+      }
+    }
+
+    const columnsByTable = new Map<string, ContentIntrospectedColumn[]>();
+
+    for (const row of columnsResult.rows) {
+      const key = `${row.table_schema}.${row.table_name}`;
+      const enumValues = row.udt_name
+        ? enumValuesByType.get(`${row.table_schema}.${row.udt_name}`) ?? enumValuesByType.get(`public.${row.udt_name}`) ?? null
+        : null;
+      columnsByTable.set(key, [
+        ...(columnsByTable.get(key) ?? []),
+        {
+          dataType: row.data_type,
+          defaultValue: row.column_default,
+          enumValues,
+          isArray: row.data_type === "ARRAY",
+          isGenerated: row.is_generated === "ALWAYS" || row.is_generated === "YES",
+          isJson: row.data_type === "json" || row.data_type === "jsonb",
+          isNullable: row.is_nullable === "YES",
+          name: row.column_name,
+          udtName: row.udt_name,
+        },
+      ]);
+    }
+
+    const foreignKeysByTable = new Map<string, ContentIntrospectedForeignKey[]>();
+
+    for (const row of foreignKeysResult.rows) {
+      const key = `${row.table_schema}.${row.table_name}`;
+      foreignKeysByTable.set(key, [
+        ...(foreignKeysByTable.get(key) ?? []),
+        {
+          column: row.column_name,
+          targetColumn: row.foreign_column_name,
+          targetSchema: row.foreign_table_schema,
+          targetTable: row.foreign_table_name,
+        },
+      ]);
+    }
+
+    const tables: ContentIntrospectedTable[] = [];
+
+    for (const row of tablesResult.rows) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      const table: ContentIntrospectedTable = {
+        columns: columnsByTable.get(key) ?? [],
+        foreignKeys: foreignKeysByTable.get(key) ?? [],
+        kind: row.object_kind,
+        name: row.table_name,
+        primaryKey: primaryKeyByTable.get(key) ?? null,
+        rowCountEstimate: row.row_count_estimate === null ? null : Number(row.row_count_estimate),
+        sampleRows: [],
+        schema: row.schema_name,
+      };
+
+      if (options.includeSamples && table.kind === "table") {
+        try {
+          const sampleResult = await client.query<Record<string, unknown>>(
+            `select * from ${quotePostgresIdentifier(table.schema)}.${quotePostgresIdentifier(table.name)} limit 3`,
+          );
+          table.sampleRows = sampleResult.rows.map((sample) =>
+            Object.fromEntries(
+              Object.entries(sample).map(([key, value]) => [key, normalizeDatabaseSampleValue(value)]),
+            ),
+          );
+        } catch {
+          table.sampleRows = [];
+        }
+      }
+
+      tables.push(table);
+    }
+
+    return { tables };
+  } finally {
+    await client.end();
+  }
+};
 
 const assertAuthorScopesMatchRoles = ({
   authorScopes,
@@ -368,6 +1078,7 @@ const printMainHelp = (write: (chunk: string) => void) => {
   writeLine(write, "Commands:");
   writeLine(write, "  doctor          Check BaseBuddy setup readiness.");
   writeLine(write, "  setup           Create basebuddy-data/basebuddy.config.json after env is configured.");
+  writeLine(write, "  agent:setup     Print the recommended agent-first CLI setup workflow.");
   writeLine(write, "  users:list      List local config-backed users.");
   writeLine(write, "  user:create     Create a local config-backed user.");
   writeLine(write, "  users:delete    Delete a local user when safe.");
@@ -384,6 +1095,9 @@ const printMainHelp = (write: (chunk: string) => void) => {
   writeLine(write, "  invites:revoke  Revoke a project invitation.");
   writeLine(write, "  permissions:get List permission definitions and member permissions.");
   writeLine(write, "  permissions:set Set member permission overrides.");
+  writeLine(write, "  schema:inspect  Inspect Postgres tables for mapping work.");
+  writeLine(write, "  mapping:draft   Draft mapping JSON from schema inspection.");
+  writeLine(write, "  mapping:explain Summarize mapping JSON before saving.");
   writeLine(write, "  mapping:get     Print a project mapping.");
   writeLine(write, "  mapping:set     Save a project mapping from JSON.");
   writeLine(write, "  mapping:validate Validate mapping JSON without saving.");
@@ -1332,6 +2046,81 @@ const runInvitesRevokeCommand = async (
   return 0;
 };
 
+const runAgentSetupCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "agent:setup", ["json"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy agent:setup [options]", []);
+    return 0;
+  }
+
+  const workflow = getAgentSetupWorkflow();
+
+  if (parsed.options.json) {
+    writeJson(stdout, {
+      notes: [
+        "Use CLI output as the source of truth before editing JSON by hand.",
+        "Use schema:inspect before writing mapping hints.",
+        "Use mapping:explain before mapping:set.",
+      ],
+      workflow,
+    });
+  } else {
+    writeLine(stdout, "BaseBuddy agent setup workflow");
+    writeLine(stdout);
+    for (const [index, step] of workflow.entries()) {
+      writeLine(stdout, `${index + 1}. ${step.command}`);
+      writeLine(stdout, `   ${step.purpose}`);
+    }
+  }
+
+  return 0;
+};
+
+const runSchemaInspectCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "schema:inspect", ["json", "no-samples", "schema", "table"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy schema:inspect [--schema public] [--table posts]", [
+      "--schema <value>  Limit inspection to one schema.",
+      "--table <value>   Limit inspection to one table or comma-separated tables.",
+      "--no-samples      Skip sample row reads.",
+    ]);
+    return 0;
+  }
+
+  const options = {
+    ...getSchemaInspectOptions(parsed),
+    includeSamples: parsed.options["no-samples"] === true ? false : getSchemaInspectOptions(parsed).includeSamples,
+  };
+  const schema = await inspectContentSchema(dependencies, options);
+
+  if (parsed.options.json) {
+    writeJson(stdout, schema);
+  } else {
+    writeLine(stdout, "BaseBuddy schema inspection");
+    for (const table of schema.tables) {
+      const count = table.rowCountEstimate === null ? "unknown rows" : `${table.rowCountEstimate} estimated rows`;
+      writeLine(stdout, `- ${table.schema}.${table.name} (${table.kind}, ${count})`);
+      writeLine(stdout, `  primary key: ${table.primaryKey ?? "none"}`);
+      for (const column of table.columns) {
+        const nullable = column.isNullable ? "nullable" : "required";
+        writeLine(stdout, `  - ${column.name}: ${column.dataType}${column.isArray ? "[]" : ""}, ${nullable}`);
+      }
+    }
+  }
+
+  return 0;
+};
+
 const getBindingStatusOption = (parsed: ParsedArguments): ContentBindingStatus | null => {
   const value = getOptionalStringOption(parsed, "binding-status");
 
@@ -1344,6 +2133,88 @@ const getBindingStatusOption = (parsed: ParsedArguments): ContentBindingStatus |
   }
 
   return value as ContentBindingStatus;
+};
+
+const runMappingDraftCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "mapping:draft", ["hints", "json", "no-samples", "schema", "table"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy mapping:draft [--schema public] [--table posts] [--hints mapping-hints.json]", [
+      "--schema <value>  Limit inspection to one schema.",
+      "--table <value>   Limit inspection to one table or comma-separated tables.",
+      "--hints <value>   Optional JSON hints for table, fields, editor fields, custom fields, and workflow.",
+      "--no-samples      Skip sample row reads.",
+    ]);
+    return 0;
+  }
+
+  const inspectOptions = {
+    ...getSchemaInspectOptions(parsed),
+    includeSamples: parsed.options["no-samples"] === true ? false : getSchemaInspectOptions(parsed).includeSamples,
+  };
+  const schema = await inspectContentSchema(dependencies, inspectOptions);
+  const autoMapping = buildContentAutoMappingResult(schema);
+  const hintsPath = getOptionalStringOption(parsed, "hints");
+  const hints = hintsPath ? normalizeMappingHints(await readJsonFile(hintsPath)) : {};
+  const mappingConfig = applyMappingHints(
+    autoMapping.suggestedMappingConfig,
+    schema,
+    hints,
+    inspectOptions,
+  );
+  const output = {
+    generatedAt: autoMapping.generatedAt,
+    mappingConfig,
+    summary: getMappingSummary(mappingConfig),
+    valid: true,
+  };
+
+  if (parsed.options.json) {
+    writeJson(stdout, output);
+  } else {
+    writeJson(stdout, mappingConfig);
+  }
+
+  return 0;
+};
+
+const runMappingExplainCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "mapping:explain", ["input", "json"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy mapping:explain --input <mapping.json>", [
+      "--input <value>  JSON file containing mappingConfig.",
+    ]);
+    return 0;
+  }
+
+  const mappingConfig = normalizeContentMappingConfig(
+    await readJsonFile(getRequiredStringOption(parsed, "input")),
+  );
+  const summary = getMappingSummary(mappingConfig);
+
+  if (parsed.options.json) {
+    writeJson(stdout, { mappingConfig, summary, valid: true });
+  } else {
+    writeLine(stdout, "BaseBuddy mapping summary");
+    for (const entityKey of CONTENT_MAPPING_ENTITY_KEYS) {
+      const entity = summary.entities[entityKey];
+      writeLine(stdout, `- ${entityKey}: ${entity.status}, source ${entity.source ?? "not mapped"}`);
+      writeLine(stdout, `  mapped fields: ${entity.mappedFields.length}`);
+      writeLine(stdout, `  editor fields: ${entity.editorFieldCount}`);
+      writeLine(stdout, `  custom fields: ${entity.customFieldCount}`);
+    }
+  }
+
+  return 0;
 };
 
 const runMappingGetCommand = async (
@@ -1690,6 +2561,8 @@ export const runBaseBuddyCli = async (
         return await runDoctorCommand(parsed, dependencies);
       case "setup":
         return await runSetupCommand(parsed, dependencies);
+      case "agent:setup":
+        return await runAgentSetupCommand(parsed, dependencies);
       case "users:list":
         return await runUsersListCommand(parsed, dependencies);
       case "user:create":
@@ -1722,6 +2595,12 @@ export const runBaseBuddyCli = async (
         return await runPermissionsGetCommand(parsed, dependencies);
       case "permissions:set":
         return await runPermissionsSetCommand(parsed, dependencies);
+      case "schema:inspect":
+        return await runSchemaInspectCommand(parsed, dependencies);
+      case "mapping:draft":
+        return await runMappingDraftCommand(parsed, dependencies);
+      case "mapping:explain":
+        return await runMappingExplainCommand(parsed, dependencies);
       case "mapping:get":
         return await runMappingGetCommand(parsed, dependencies);
       case "mapping:set":

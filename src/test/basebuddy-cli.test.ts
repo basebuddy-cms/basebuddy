@@ -25,12 +25,14 @@ describe("basebuddy CLI", () => {
   const runCli = async (
     args: string[],
     options: {
+      introspectContentSchema?: Parameters<typeof runBaseBuddyCli>[1]["introspectContentSchema"];
       queryDatabase?: (connectionString: string) => Promise<void>;
     } = {},
   ) => {
     let stdout = "";
     let stderr = "";
     const exitCode = await runBaseBuddyCli(args, {
+      introspectContentSchema: options.introspectContentSchema,
       now: () => fixedNow,
       queryDatabase: options.queryDatabase,
       stderr: (chunk) => {
@@ -520,6 +522,291 @@ describe("basebuddy CLI", () => {
     ]);
 
     expect(sidebarResetResult.exitCode).toBe(0);
+  });
+
+  it("inspects database schema for agent-readable mapping work without printing secrets", async () => {
+    vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
+    const introspectContentSchema = vi.fn().mockResolvedValue({
+      tables: [
+        {
+          columns: [
+            {
+              dataType: "uuid",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: false,
+              name: "id",
+              udtName: "uuid",
+            },
+            {
+              dataType: "text",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: false,
+              name: "title",
+              udtName: "text",
+            },
+          ],
+          foreignKeys: [],
+          kind: "table",
+          name: "pages",
+          primaryKey: "id",
+          rowCountEstimate: 2,
+          sampleRows: [{ id: "page-1", title: "Home" }],
+          schema: "public",
+        },
+      ],
+    });
+
+    const result = await runCli([
+      "schema:inspect",
+      "--schema",
+      "public",
+      "--table",
+      "pages",
+      "--json",
+    ], {
+      introspectContentSchema,
+    });
+    const body = JSON.parse(result.stdout);
+
+    expect(result.exitCode).toBe(0);
+    expect(introspectContentSchema).toHaveBeenCalledWith({
+      includeSamples: true,
+      schema: "public",
+      tableRefs: ["public.pages"],
+    });
+    expect(body.tables[0]).toMatchObject({
+      name: "pages",
+      primaryKey: "id",
+      schema: "public",
+    });
+    expect(result.output).not.toContain("db-pass");
+  });
+
+  it("drafts a valid mapping from inspected schema and agent hints", async () => {
+    const schema = {
+      tables: [
+        {
+          columns: [
+            {
+              dataType: "uuid",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: false,
+              name: "id",
+              udtName: "uuid",
+            },
+            {
+              dataType: "text",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: false,
+              name: "headline",
+              udtName: "text",
+            },
+            {
+              dataType: "text",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: true,
+              name: "slug",
+              udtName: "text",
+            },
+            {
+              dataType: "text",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: true,
+              name: "body_md",
+              udtName: "text",
+            },
+            {
+              dataType: "jsonb",
+              defaultValue: null,
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: true,
+              isNullable: true,
+              name: "faq_json",
+              udtName: "jsonb",
+            },
+            {
+              dataType: "boolean",
+              defaultValue: "false",
+              enumValues: null,
+              isArray: false,
+              isGenerated: false,
+              isJson: false,
+              isNullable: false,
+              name: "is_published",
+              udtName: "bool",
+            },
+          ],
+          foreignKeys: [],
+          kind: "table",
+          name: "pages",
+          primaryKey: "id",
+          rowCountEstimate: 3,
+          sampleRows: [{ body_md: "# Home", faq_json: [{ question: "Q" }], headline: "Home", id: "page-1" }],
+          schema: "public",
+        },
+      ],
+    };
+    const hintsPath = join(tempDir, "mapping-hints.json");
+    await writeFile(
+      hintsPath,
+      JSON.stringify({
+        postsTable: "public.pages",
+        titleColumn: "headline",
+        slugColumn: "slug",
+        contentFields: [
+          {
+            column: "body_md",
+            kind: "markdown",
+            label: "Body",
+          },
+        ],
+        customFields: [
+          {
+            column: "faq_json",
+            kind: "json",
+            label: "FAQ",
+          },
+        ],
+        workflow: {
+          mode: "published_flag",
+          publishedFlagColumn: "is_published",
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await runCli([
+      "mapping:draft",
+      "--schema",
+      "public",
+      "--table",
+      "pages",
+      "--hints",
+      hintsPath,
+      "--json",
+    ], {
+      introspectContentSchema: vi.fn().mockResolvedValue(schema),
+    });
+    const body = JSON.parse(result.stdout);
+    const posts = body.mappingConfig.entities.posts;
+
+    expect(result.exitCode).toBe(0);
+    expect(body.valid).toBe(true);
+    expect(posts.source).toMatchObject({
+      primaryKey: "id",
+      schema: "public",
+      table: "pages",
+    });
+    expect(posts.fields.title.column).toBe("headline");
+    expect(posts.editorFields).toEqual([
+      expect.objectContaining({
+        column: "body_md",
+        kind: "markdown",
+        label: "Body",
+      }),
+    ]);
+    expect(posts.customFields).toEqual([
+      expect.objectContaining({
+        column: "faq_json",
+        kind: "json",
+        label: "FAQ",
+      }),
+    ]);
+    expect(posts.workflow).toMatchObject({
+      mode: "published_flag",
+      publishedFlagColumn: "is_published",
+    });
+  });
+
+  it("explains mapping JSON so agents can verify before applying it", async () => {
+    const mappingPath = join(tempDir, "mapping.json");
+    await writeFile(
+      mappingPath,
+      JSON.stringify({
+        entities: {
+          posts: {
+            editorFields: [
+              {
+                column: "body_md",
+                id: "body",
+                kind: "markdown",
+                label: "Body",
+                placeholder: null,
+                required: false,
+                visible: true,
+              },
+            ],
+            source: {
+              kind: "table",
+              primaryKey: "id",
+              schema: "public",
+              table: "pages",
+            },
+            status: "mapped",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await runCli([
+      "mapping:explain",
+      "--input",
+      mappingPath,
+      "--json",
+    ]);
+    const body = JSON.parse(result.stdout);
+
+    expect(result.exitCode).toBe(0);
+    expect(body.summary.entities.posts).toMatchObject({
+      editorFieldCount: 1,
+      source: "public.pages",
+      status: "mapped",
+    });
+  });
+
+  it("prints an agent-first CLI setup workflow", async () => {
+    const result = await runCli(["agent:setup", "--json"]);
+    const body = JSON.parse(result.stdout);
+
+    expect(result.exitCode).toBe(0);
+    expect(body.workflow.map((step: { command: string }) => step.command)).toEqual([
+      "pnpm basebuddy doctor",
+      "pnpm basebuddy setup",
+      "pnpm basebuddy projects:create",
+      "pnpm basebuddy schema:inspect",
+      "pnpm basebuddy mapping:draft",
+      "pnpm basebuddy mapping:explain",
+      "pnpm basebuddy mapping:set",
+      "pnpm basebuddy sidebar:set",
+      "pnpm basebuddy storage:set",
+    ]);
   });
 
   it("supports non-secret media and file storage mapping commands", async () => {

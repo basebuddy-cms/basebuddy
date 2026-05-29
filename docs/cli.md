@@ -11,6 +11,7 @@ Use CLI commands instead of hand-editing the config file. Env secrets still belo
 ## Setup
 
 ```sh
+pnpm basebuddy agent:setup --json
 pnpm basebuddy doctor
 pnpm basebuddy doctor --json
 pnpm basebuddy doctor --skip-db-check
@@ -57,6 +58,12 @@ pnpm basebuddy permissions:set --project docs --actor-email owner@example.com --
 ## Mapping, Sidebar, And Storage
 
 ```sh
+pnpm basebuddy schema:inspect --schema public --json
+pnpm basebuddy schema:inspect --schema public --table posts,authors,categories --json
+
+pnpm basebuddy mapping:draft --schema public --table posts --json
+pnpm basebuddy mapping:draft --schema public --table pages --hints mapping-hints.json --json
+pnpm basebuddy mapping:explain --input mapping.json --json
 pnpm basebuddy mapping:get --project docs --json
 pnpm basebuddy mapping:validate --input mapping.json --json
 pnpm basebuddy mapping:set --project docs --input mapping.json --binding-status ready --json
@@ -72,6 +79,16 @@ pnpm basebuddy storage:set --project docs --library media --provider supabase_bu
 
 Storage commands save mapping metadata only. Supabase and S3 secrets stay in env.
 
+## Agent Workflow
+
+Agents should start with:
+
+```sh
+pnpm basebuddy agent:setup --json
+```
+
+Then use `schema:inspect`, `mapping:draft`, `mapping:explain`, and `mapping:set` instead of reading BaseBuddy source code to guess mapping JSON.
+
 ## Not Supported By CLI
 
-The CLI does not edit content rows, upload files, delete storage objects, run mapping auto-detection, publish/unpublish/archive content, or manage deployment env values.
+The CLI does not edit content rows, upload files, delete storage objects, publish/unpublish/archive content, or manage deployment env values.

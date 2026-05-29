@@ -2,7 +2,7 @@
 
 Everything you need to install, configure, operate, and contribute to BaseBuddy.
 
-Start with [Getting Started](./getting-started.md), then [Onboarding](./onboarding.md), then [Projects and Mapping](./projects-and-mapping.md). Operators and agents can use the [CLI](./cli.md) for config-backed setup and project administration.
+Start with [Getting Started](./getting-started.md), then [Onboarding](./onboarding.md), then [Projects and Mapping](./projects-and-mapping.md). Operators and agents should use [Agent CLI Setup](./agent-cli-setup.md) and the [CLI](./cli.md) for config-backed setup, schema inspection, mapping drafts, project administration, permissions, sidebar layout, and storage metadata.
 
 ## Recommended Path
 
@@ -15,6 +15,25 @@ flowchart TD
   Project --> Mapping["Save mapping"]
   Mapping --> Operate["Operate safely"]
 ```
+
+## Agent Setup Path
+
+Agents should start with:
+
+```sh
+pnpm basebuddy agent:setup --json
+```
+
+For mapping work, prefer this route:
+
+```sh
+pnpm basebuddy schema:inspect --schema public --json
+pnpm basebuddy mapping:draft --schema public --table posts --json
+pnpm basebuddy mapping:explain --input mapping.json --json
+pnpm basebuddy mapping:set --project docs --input mapping.json --binding-status ready --json
+```
+
+Use CLI output and the live schema before reading source files. Direct config edits are for emergency repair only.
 
 ## Core Guarantees
 

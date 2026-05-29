@@ -107,13 +107,26 @@ Finish the three onboarding screens: connect the database with env values from `
 Agents or operators can use the CLI instead:
 
 ```sh
+pnpm basebuddy agent:setup --json
+
 pnpm basebuddy setup \
   --owner-email "owner@example.com" \
   --owner-name "Owner User" \
   --owner-password "replace-with-a-strong-password"
 ```
 
-After setup, the CLI can also manage config-backed users, projects, members, invites, permissions, mapping revisions, sidebar layout, and storage mapping metadata. Use `pnpm basebuddy --help` or the [CLI docs](./docs/cli.md). AI agents should start with [AGENTS.md](./AGENTS.md).
+After setup, the CLI can also manage config-backed users, projects, members, invites, permissions, schema inspection, mapping drafts, mapping revisions, sidebar layout, and storage mapping metadata. Use `pnpm basebuddy --help` or the [CLI docs](./docs/cli.md).
+
+For agent-led project setup, use:
+
+```sh
+pnpm basebuddy schema:inspect --schema public --json
+pnpm basebuddy mapping:draft --schema public --table posts --json
+pnpm basebuddy mapping:explain --input mapping.json --json
+pnpm basebuddy mapping:set --project docs --input mapping.json --binding-status ready --json
+```
+
+AI agents should start with [AGENTS.md](./AGENTS.md), then prefer the CLI before reading source code.
 
 ## First Project
 

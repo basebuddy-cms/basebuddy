@@ -36,6 +36,22 @@ Semantic roles such as `title`, `slug`, `status`, `publishedAt`, `author`, `cate
 
 Auto-detection may suggest a mapping, but manual mapping is the fallback. If BaseBuddy cannot safely infer a shape, the user can still choose tables, columns, relation strategies, workflow fields, media, and files.
 
+## Agent And CLI Mapping
+
+Agents and operators should use the CLI before reading source files:
+
+```sh
+pnpm basebuddy agent:setup --json
+pnpm basebuddy schema:inspect --schema public --json
+pnpm basebuddy mapping:draft --schema public --table posts --json
+pnpm basebuddy mapping:explain --input mapping.json --json
+pnpm basebuddy mapping:set --project docs --input mapping.json --binding-status ready --json
+```
+
+Use `schema:inspect` to learn the user's actual tables, columns, keys, enums, and sample rows. Use `mapping:draft` to create valid mapping JSON. Use `mapping:explain` before saving the mapping.
+
+For custom schemas, pass a hints file to `mapping:draft`. See [Agent CLI Setup](./agent-cli-setup.md) and [CLI](./cli.md).
+
 ## Save Behavior
 
 Normal save writes dirty mapped fields only.
