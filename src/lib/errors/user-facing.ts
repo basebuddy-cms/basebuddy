@@ -60,17 +60,12 @@ const MESSAGE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string | ((mes
     replacement: SIGN_IN_REQUIRED_MESSAGE,
   },
   {
-    pattern:
-      /BaseBuddy still needs a required setup update|Update basebuddy\.config\.json|Apply the latest setup update|still needs a required setup update/i,
-    replacement: TEMPORARY_UNAVAILABLE_MESSAGE,
-  },
-  {
     pattern: /Missing required environment variable/i,
-    replacement: "BaseBuddy needs a setup update. Open setup and check the environment values.",
+    replacement: "BaseBuddy setup needs attention. Open setup and check the environment values.",
   },
   {
     pattern: /Missing BaseBuddy data config file/i,
-    replacement: "BaseBuddy needs a setup update. Open setup and check the BaseBuddy config.",
+    replacement: "BaseBuddy setup needs attention. Open setup and check the BaseBuddy config.",
   },
   {
     pattern:
@@ -85,7 +80,7 @@ const MESSAGE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string | ((mes
   },
   {
     pattern: /schema cache|PGRST\d+|RPC|function .* does not exist/i,
-    replacement: "BaseBuddy needs a setup update. Open setup and run the latest checks.",
+    replacement: "BaseBuddy setup needs attention. Open setup and run the checks.",
   },
   {
     pattern: /Session Pooler|Mapped\s+content requires/i,
@@ -146,7 +141,7 @@ const SETUP_OWNER_MESSAGE_REPLACEMENTS: Array<{
   },
   {
     pattern: /schema cache|PGRST\d+|RPC|function .* does not exist/i,
-    replacement: "BaseBuddy needs a setup update. Open setup and run the latest checks.",
+    replacement: "BaseBuddy setup needs attention. Open setup and run the checks.",
   },
   {
     pattern:

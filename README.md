@@ -23,6 +23,8 @@
   ·
   <a href="./SECURITY.md">Security</a>
   ·
+  <a href="./AGENTS.md">Agents</a>
+  ·
   <a href="./CHANGELOG.md">Changelog</a>
   ·
   <a href="https://github.com/basebuddy-cms/basebuddy">GitHub</a>
@@ -111,7 +113,7 @@ pnpm basebuddy setup \
   --owner-password "replace-with-a-strong-password"
 ```
 
-After setup, the CLI can also manage config-backed users, projects, members, invites, permissions, mapping revisions, sidebar layout, and storage mapping metadata. Use `pnpm basebuddy --help` or the [CLI docs](./docs/cli.md).
+After setup, the CLI can also manage config-backed users, projects, members, invites, permissions, mapping revisions, sidebar layout, and storage mapping metadata. Use `pnpm basebuddy --help` or the [CLI docs](./docs/cli.md). AI agents should start with [AGENTS.md](./AGENTS.md).
 
 ## First Project
 

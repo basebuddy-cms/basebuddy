@@ -16,7 +16,7 @@ The setup flow is:
 
 Onboarding shows the required env keys for auth signing and content database access. It does not collect database URLs or service keys into the config file. The checks verify the config file, owner account, env values, and database connection.
 
-It does not ask users to choose custom paths, run BaseBuddy app-state migrations, or configure an external auth provider.
+It does not ask users to choose custom paths, run BaseBuddy-owned database setup scripts, or configure an external auth provider.
 
 ## Ready State
 

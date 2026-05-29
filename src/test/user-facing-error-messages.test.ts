@@ -37,15 +37,6 @@ describe("user-facing error messages", () => {
     expect(
       getProductionErrorMessage(
         new Error(
-          "BaseBuddy still needs a required setup update before you can create or open projects. Update basebuddy.config.json and try again.",
-        ),
-        "Could not load this project right now.",
-      ),
-    ).toBe("BaseBuddy is temporarily unavailable. Please try again in a few minutes.");
-
-    expect(
-      getProductionErrorMessage(
-        new Error(
           "Could not write basebuddy.config.json. The app process needs permission to update the BaseBuddy data config file.",
         ),
         "Could not create the project right now.",
@@ -82,14 +73,14 @@ describe("user-facing error messages", () => {
         new Error("Could not find the public.basebuddy_get_projects RPC in the schema cache."),
         "Could not load projects right now.",
       ),
-    ).toBe("BaseBuddy needs a setup update. Open setup and run the latest checks.");
+    ).toBe("BaseBuddy setup needs attention. Open setup and run the checks.");
 
     expect(
       getProductionErrorMessage(
         new Error("Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY"),
         "Could not load this project right now.",
       ),
-    ).toBe("BaseBuddy needs a setup update. Open setup and check the environment values.");
+    ).toBe("BaseBuddy setup needs attention. Open setup and check the environment values.");
 
     expect(
       getProductionErrorMessage(
@@ -133,14 +124,14 @@ describe("user-facing error messages", () => {
         new Error("Could not find the public.basebuddy_get_projects RPC in the schema cache."),
         "Could not complete setup checks right now.",
       ),
-    ).toBe("BaseBuddy needs a setup update. Open setup and run the latest checks.");
+    ).toBe("BaseBuddy setup needs attention. Open setup and run the checks.");
 
     expect(
       getProductionErrorMessage(
         new Error("Missing BaseBuddy data config file: basebuddy-data/basebuddy.config.json"),
         "Could not load this project right now.",
       ),
-    ).toBe("BaseBuddy needs a setup update. Open setup and check the BaseBuddy config.");
+    ).toBe("BaseBuddy setup needs attention. Open setup and check the BaseBuddy config.");
   });
 
   it("preserves self-host mapping guidance", () => {

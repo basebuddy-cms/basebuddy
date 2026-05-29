@@ -704,7 +704,7 @@ export const getContentWorkspaceMetaForMappedContent = async ({
     mapping: normalizedCapabilitySummaryMapping,
   });
   if (!runtimeAdapter.loadWorkspace) {
-    throw new Error("This project needs a setup update before the workspace can load.");
+    throw new Error("This project setup needs attention before the workspace can load.");
   }
 
   const contentRuntimeSummary = await runtimeAdapter.loadWorkspace();

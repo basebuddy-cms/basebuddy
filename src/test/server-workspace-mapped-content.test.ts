@@ -731,7 +731,7 @@ describe("server workspace mapped-content resilience", () => {
         } as never,
         projectId: "project-1",
       }),
-    ).rejects.toThrow("This project needs a setup update before the workspace can load.");
+    ).rejects.toThrow("This project setup needs attention before the workspace can load.");
     expect(getCapabilitySummaryMock).not.toHaveBeenCalled();
   });
 });
