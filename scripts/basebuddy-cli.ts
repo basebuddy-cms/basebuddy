@@ -366,8 +366,8 @@ const printMainHelp = (write: (chunk: string) => void) => {
   writeLine(write, "Usage: pnpm basebuddy <command> [options]");
   writeLine(write);
   writeLine(write, "Commands:");
-  writeLine(write, "  doctor          Check root config setup readiness.");
-  writeLine(write, "  setup           Create basebuddy.config.json after env is configured.");
+  writeLine(write, "  doctor          Check BaseBuddy setup readiness.");
+  writeLine(write, "  setup           Create basebuddy-data/basebuddy.config.json after env is configured.");
   writeLine(write, "  users:list      List local config-backed users.");
   writeLine(write, "  user:create     Create a local config-backed user.");
   writeLine(write, "  users:delete    Delete a local user when safe.");

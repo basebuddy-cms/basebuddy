@@ -7,7 +7,7 @@ BaseBuddy is a self-hosted editor for existing Postgres/Supabase schemas.
 BaseBuddy app state lives in:
 
 ```text
-process.cwd()/basebuddy.config.json
+process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
 The config file stores users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar settings. Auth signing, content database access, and optional storage credentials come from environment variables.

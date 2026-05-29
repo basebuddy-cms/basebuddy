@@ -1,6 +1,6 @@
 # Auth
 
-BaseBuddy uses local email/password users stored in `basebuddy.config.json`.
+BaseBuddy uses local email/password users stored in `basebuddy-data/basebuddy.config.json`.
 
 The first owner is created from onboarding or `pnpm basebuddy setup`. Sign-in creates a signed HttpOnly session cookie. Raw session tokens are not written to the browser or logs.
 

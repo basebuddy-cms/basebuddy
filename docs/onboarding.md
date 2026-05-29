@@ -1,6 +1,6 @@
 # Onboarding
 
-`/onboarding` is the first-run setup screen. It creates `process.cwd()/basebuddy.config.json` from UI input after required secrets are present in env.
+`/onboarding` is the first-run setup screen. It creates `process.cwd()/basebuddy-data/basebuddy.config.json` from UI input after required secrets are present in env.
 
 Onboarding asks for:
 

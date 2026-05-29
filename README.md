@@ -34,7 +34,7 @@
 
 BaseBuddy is a self-hosted editor for existing Postgres or Supabase content databases.
 
-You run one BaseBuddy app, create `basebuddy.config.json` from `/onboarding` or the CLI, create projects, map existing tables, and start editing. The saved mapping is the runtime source of truth. Your content database stays yours.
+You run one BaseBuddy app, create `basebuddy-data/basebuddy.config.json` from `/onboarding` or the CLI, create projects, map existing tables, and start editing. The saved mapping is the runtime source of truth. Your content database stays yours.
 
 BaseBuddy is useful when you want:
 
@@ -61,7 +61,7 @@ BaseBuddy is useful when you want:
 
 ```mermaid
 flowchart LR
-  Config["basebuddy.config.json"] --> Mapping["Saved BaseBuddy mapping"]
+  Config["basebuddy-data/basebuddy.config.json"] --> Mapping["Saved BaseBuddy mapping"]
   Database["Your Postgres/Supabase content database"] --> Mapping
   Mapping --> Runtime["Storage-first runtime"]
   Runtime --> Editor["BaseBuddy editor"]
@@ -75,7 +75,7 @@ BaseBuddy separates three ideas:
 - **Semantic role**: optional meaning like title, content, slug, status, author, category, tags, or featured image.
 - **UI**: the editor control selected from the storage contract, then refined by semantic role.
 
-`basebuddy.config.json` stores BaseBuddy users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar layout. Database URLs, service keys, signing secrets, and storage access keys stay in `.env` or deployment environment variables.
+`basebuddy-data/basebuddy.config.json` stores BaseBuddy users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar layout. Database URLs, service keys, signing secrets, and storage access keys stay in `.env` or deployment environment variables.
 
 ## Quick Start
 
@@ -100,7 +100,7 @@ Open:
 http://localhost:8080/onboarding
 ```
 
-Finish the three onboarding screens: connect the database with env values from `.env.example`, create the owner account, and let setup checks run. BaseBuddy writes `process.cwd()/basebuddy.config.json`, then you sign in and create your first project.
+Finish the three onboarding screens: connect the database with env values from `.env.example`, create the owner account, and let setup checks run. BaseBuddy writes `process.cwd()/basebuddy-data/basebuddy.config.json`, then you sign in and create your first project.
 
 Agents or operators can use the CLI instead:
 
@@ -141,13 +141,13 @@ Before exposing BaseBuddy publicly:
 
 - run `pnpm basebuddy doctor`;
 - confirm required secrets are set in env, not in the repo;
-- confirm `basebuddy.config.json` exists on the server and is ignored by git;
-- confirm the server has persistent writable storage for `basebuddy.config.json`;
+- confirm `basebuddy-data/basebuddy.config.json` exists on the server and `basebuddy-data/` is ignored by git;
+- confirm the server has persistent writable storage for `basebuddy-data/`;
 - put the app behind HTTPS;
 - set request body limits that match your upload policy;
 - use a shared upstream rate limiter if you run multiple app instances.
 
-BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys unless you provide durable writable storage for the app root. UI changes to projects, mappings, permissions, and sidebar layout write to `basebuddy.config.json` on the running server.
+BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys unless you provide durable writable storage for `basebuddy-data/`. UI changes to projects, mappings, permissions, and sidebar layout write to `basebuddy-data/basebuddy.config.json` on the running server.
 
 Useful checks:
 

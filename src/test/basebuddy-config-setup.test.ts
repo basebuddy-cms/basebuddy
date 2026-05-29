@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,6 +25,7 @@ describe("BaseBuddy config setup status", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "basebuddy-config-setup-"));
     process.chdir(tempDir);
+    await mkdir(join(process.cwd(), "basebuddy-data"), { recursive: true });
     vi.unstubAllEnvs();
   });
 
@@ -34,14 +35,16 @@ describe("BaseBuddy config setup status", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  it("treats a missing root config as setup-required without crashing", async () => {
+  it("treats a missing basebuddy-data config as setup-required without crashing", async () => {
     const status = await getBaseBuddyConfigSetupStatus();
     const configSection = status.sections.find((section) => section.title === "Config file");
 
     expect(isBaseBuddyConfigSetupReady(status)).toBe(false);
     expect(status.topology).toBe("config-file");
     expect(JSON.stringify(status)).not.toMatch(/same-project|split-project|unified|split/i);
-    expect(status.configPath).toBe(join(process.cwd(), "basebuddy.config.json"));
+    expect(status.configPath).toBe(
+      join(process.cwd(), "basebuddy-data", "basebuddy.config.json"),
+    );
     expect(configSection?.status).toBe("missing");
     expect(configSection?.checks).toEqual(
       expect.arrayContaining([

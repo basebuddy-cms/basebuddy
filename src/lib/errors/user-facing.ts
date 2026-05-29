@@ -69,12 +69,12 @@ const MESSAGE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string | ((mes
     replacement: "BaseBuddy needs a setup update. Open setup and check the environment values.",
   },
   {
-    pattern: /Missing root config file/i,
+    pattern: /Missing BaseBuddy data config file/i,
     replacement: "BaseBuddy needs a setup update. Open setup and check the BaseBuddy config.",
   },
   {
     pattern:
-      /Could not apply the BaseBuddy .* schema|Could not install the .* schema|Could not write basebuddy\.config\.json|project root config file/i,
+      /Could not apply the BaseBuddy .* schema|Could not install the .* schema|Could not write basebuddy\.config\.json|BaseBuddy data config file/i,
     replacement:
       "We couldn't finish preparing this project. Check the setup permissions and try again.",
   },
@@ -136,8 +136,8 @@ const SETUP_OWNER_MESSAGE_REPLACEMENTS: Array<{
   replacement: string | ((message: string, match: RegExpExecArray) => string);
 }> = [
   {
-    pattern: /Missing root config file|basebuddy\.config\.json/i,
-    replacement: "Open onboarding or run the BaseBuddy CLI setup command to create basebuddy.config.json.",
+    pattern: /Missing BaseBuddy data config file|basebuddy\.config\.json/i,
+    replacement: "Open onboarding or run the BaseBuddy CLI setup command to create basebuddy-data/basebuddy.config.json.",
   },
   {
     pattern: /Missing required environment variable:?\s*([A-Z0-9_]+)/i,

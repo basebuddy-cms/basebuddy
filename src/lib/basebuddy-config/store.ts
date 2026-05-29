@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
-import { access, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { getBaseBuddyConfigPath } from "./paths";
 import {
@@ -113,6 +114,7 @@ const writeValidatedBaseBuddyConfig = async (config: BaseBuddyConfig) => {
   const serializedConfig = `${JSON.stringify(validatedConfig, null, 2)}\n`;
 
   try {
+    await mkdir(dirname(configPath), { recursive: true });
     await writeFile(tempPath, serializedConfig, {
       encoding: "utf8",
       mode: 0o600,

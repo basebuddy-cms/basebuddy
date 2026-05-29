@@ -15,12 +15,13 @@ import {
   loadBaseBuddyConfig,
   writeBaseBuddyConfig,
 } from "@/lib/basebuddy-config/store";
+import { getBaseBuddyAuditLogPath } from "@/lib/basebuddy-config/audit-log";
 
 const fixedNow = "2026-05-27T00:00:00.000Z";
 const authSecret = "local-auth-secret-value-with-32-plus-chars";
 
-const readAuditEvents = async (tempDir: string) => {
-  const contents = await readFile(join(tempDir, "basebuddy.audit.jsonl"), "utf8");
+const readAuditEvents = async () => {
+  const contents = await readFile(getBaseBuddyAuditLogPath(), "utf8");
 
   return contents.trim().split("\n").map((line) => JSON.parse(line));
 };
@@ -113,7 +114,7 @@ describe("BaseBuddy config auth profile helpers", () => {
       }),
     ]);
 
-    const auditEvents = await readAuditEvents(tempDir);
+    const auditEvents = await readAuditEvents();
 
     expect(auditEvents).toEqual([
       expect.objectContaining({
@@ -131,7 +132,7 @@ describe("BaseBuddy config auth profile helpers", () => {
       password: "SecondPass1!",
     });
     const config = await loadBaseBuddyConfig();
-    const auditEvents = await readAuditEvents(tempDir);
+    const auditEvents = await readAuditEvents();
 
     expect(createdUser).toMatchObject({
       email: "second-owner@example.com",
@@ -145,6 +146,9 @@ describe("BaseBuddy config auth profile helpers", () => {
         type: "user.create",
       }),
     ]);
+    expect(getBaseBuddyAuditLogPath()).toBe(
+      join(process.cwd(), "basebuddy-data", "basebuddy.audit.jsonl"),
+    );
     expect(JSON.stringify(auditEvents)).not.toContain("SecondPass1!");
   });
 });

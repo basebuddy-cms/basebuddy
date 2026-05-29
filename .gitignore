@@ -28,6 +28,7 @@ lerna-debug.log*
 .env*
 !.env.example
 !.env.playwright.example
+basebuddy-data/
 basebuddy.config.json
 basebuddy.config.*.json
 !basebuddy.config.example.json

@@ -53,7 +53,7 @@ describe("setup create route", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  it("creates the root config and first owner without storing env secrets", async () => {
+  it("creates the BaseBuddy data config and first owner without storing env secrets", async () => {
     const response = await POST(createSetupRequest(setupPayload));
     const body = await response.json();
     const savedConfig = await readSavedConfig();

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+import { getBaseBuddyDataDirectoryPath } from "./paths";
 
 export const BASEBUDDY_AUDIT_LOG_FILENAME = "basebuddy.audit.jsonl";
 
@@ -27,7 +29,7 @@ const normalizeOptionalString = (value: string | null | undefined) => {
 };
 
 export const getBaseBuddyAuditLogPath = () =>
-  join(process.cwd(), BASEBUDDY_AUDIT_LOG_FILENAME);
+  join(getBaseBuddyDataDirectoryPath(), BASEBUDDY_AUDIT_LOG_FILENAME);
 
 export const appendBaseBuddyAuditEvent = async ({
   actorEmail = null,
@@ -50,7 +52,10 @@ export const appendBaseBuddyAuditEvent = async ({
     userAgent: normalizeOptionalString(userAgent),
   };
 
-  await appendFile(getBaseBuddyAuditLogPath(), `${JSON.stringify(event)}\n`, {
+  const auditLogPath = getBaseBuddyAuditLogPath();
+
+  await mkdir(dirname(auditLogPath), { recursive: true });
+  await appendFile(auditLogPath, `${JSON.stringify(event)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });

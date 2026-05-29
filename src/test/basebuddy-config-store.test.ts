@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  BASEBUDDY_CONFIG_DIRECTORY,
   BASEBUDDY_CONFIG_FILENAME,
   getBaseBuddyConfigPath,
 } from "@/lib/basebuddy-config/paths";
@@ -39,6 +40,7 @@ describe("BaseBuddy config store", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "basebuddy-config-store-"));
     process.chdir(tempDir);
+    await mkdir(join(process.cwd(), "basebuddy-data"), { recursive: true });
   });
 
   afterEach(async () => {
@@ -46,10 +48,11 @@ describe("BaseBuddy config store", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  it("resolves the config file at process.cwd()/basebuddy.config.json", () => {
+  it("resolves the config file at process.cwd()/basebuddy-data/basebuddy.config.json", () => {
+    expect(BASEBUDDY_CONFIG_DIRECTORY).toBe("basebuddy-data");
     expect(BASEBUDDY_CONFIG_FILENAME).toBe("basebuddy.config.json");
     expect(getBaseBuddyConfigPath()).toBe(
-      join(process.cwd(), "basebuddy.config.json"),
+      join(process.cwd(), "basebuddy-data", "basebuddy.config.json"),
     );
   });
 

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,6 +52,7 @@ describe("basebuddy CLI", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "basebuddy-cli-"));
     process.chdir(tempDir);
+    await mkdir(join(process.cwd(), "basebuddy-data"), { recursive: true });
     vi.unstubAllEnvs();
   });
 
@@ -61,14 +62,17 @@ describe("basebuddy CLI", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  it("doctor exits non-zero for a missing root config without creating another path", async () => {
+  it("doctor exits non-zero for a missing basebuddy-data config without creating another path", async () => {
     const result = await runCli(["doctor"]);
 
     expect(result.exitCode).toBe(1);
-    expect(result.stdout).toContain(join(tempDir, "basebuddy.config.json"));
+    expect(result.stdout).toContain(
+      join(process.cwd(), "basebuddy-data", "basebuddy.config.json"),
+    );
     expect(result.output).not.toContain(".basebuddy");
     expect(result.output).not.toContain("BASEBUDDY_DATA_DIR");
     expect(existsSync(getBaseBuddyConfigPath())).toBe(false);
+    expect(existsSync(join(tempDir, "basebuddy.config.json"))).toBe(false);
     expect(existsSync(join(tempDir, ".basebuddy"))).toBe(false);
   });
 
@@ -95,7 +99,7 @@ describe("basebuddy CLI", () => {
     expect(result.stdout).toContain("mapping:set");
   });
 
-  it("setup creates only process.cwd()/basebuddy.config.json without storing env secrets", async () => {
+  it("setup creates only process.cwd()/basebuddy-data/basebuddy.config.json without storing env secrets", async () => {
     vi.stubEnv("BASEBUDDY_AUTH_SECRET", authSecret);
     vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
 
@@ -109,13 +113,16 @@ describe("basebuddy CLI", () => {
     expect(serializedConfig).not.toContain("db-pass");
     expect(serializedConfig).not.toContain("databaseUrl");
     expect(serializedConfig).not.toContain("authSecret");
-    expect(result.output).toContain(join(tempDir, "basebuddy.config.json"));
+    expect(result.output).toContain(
+      join(process.cwd(), "basebuddy-data", "basebuddy.config.json"),
+    );
     expect(result.output).not.toContain(authSecret);
     expect(result.output).not.toContain("db-pass");
+    expect(existsSync(join(tempDir, "basebuddy.config.json"))).toBe(false);
     expect(existsSync(join(tempDir, ".basebuddy"))).toBe(false);
   });
 
-  it("setup can create the first owner in the same root config file and checks database reachability", async () => {
+  it("setup can create the first owner in the same BaseBuddy data config file and checks database reachability", async () => {
     vi.stubEnv("BASEBUDDY_AUTH_SECRET", authSecret);
     vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
     const queryDatabase = vi.fn().mockResolvedValue(undefined);

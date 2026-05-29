@@ -46,7 +46,7 @@ describe("user-facing error messages", () => {
     expect(
       getProductionErrorMessage(
         new Error(
-          "Could not write basebuddy.config.json. The app process needs permission to update the project root config file.",
+          "Could not write basebuddy.config.json. The app process needs permission to update the BaseBuddy data config file.",
         ),
         "Could not create the project right now.",
       ),
@@ -123,10 +123,10 @@ describe("user-facing error messages", () => {
   it("uses setup-owner copy when setup diagnostics need technical next steps", () => {
     expect(
       getSetupOwnerErrorMessage(
-        new Error("Missing root config file: basebuddy.config.json"),
+        new Error("Missing BaseBuddy data config file: basebuddy-data/basebuddy.config.json"),
         "Could not complete setup checks right now.",
       ),
-    ).toBe("Open onboarding or run the BaseBuddy CLI setup command to create basebuddy.config.json.");
+    ).toBe("Open onboarding or run the BaseBuddy CLI setup command to create basebuddy-data/basebuddy.config.json.");
 
     expect(
       getSetupOwnerErrorMessage(
@@ -137,7 +137,7 @@ describe("user-facing error messages", () => {
 
     expect(
       getProductionErrorMessage(
-        new Error("Missing root config file: basebuddy.config.json"),
+        new Error("Missing BaseBuddy data config file: basebuddy-data/basebuddy.config.json"),
         "Could not load this project right now.",
       ),
     ).toBe("BaseBuddy needs a setup update. Open setup and check the BaseBuddy config.");

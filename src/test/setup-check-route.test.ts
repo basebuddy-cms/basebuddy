@@ -30,7 +30,7 @@ describe("setup check route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [
@@ -65,7 +65,7 @@ describe("setup check route", () => {
     expect(body).toEqual({
       ready: true,
       status: {
-        configPath: "/repo/basebuddy.config.json",
+        configPath: "/repo/basebuddy-data/basebuddy.config.json",
         sections: [
           {
             checks: [
@@ -114,7 +114,7 @@ describe("setup check route", () => {
     expect(body).toEqual({
       ready: false,
       status: {
-        configPath: "/repo/basebuddy.config.json",
+        configPath: "/repo/basebuddy-data/basebuddy.config.json",
         sections: [
           {
             checks: [

@@ -25,7 +25,7 @@ describe("API setup-required guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [],
       topology: "config-file",
     });
@@ -43,11 +43,11 @@ describe("API setup-required guard", () => {
 
   it("returns setup-required before regular API auth reads the local session", async () => {
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [],
-          description: "Create basebuddy.config.json in the app root.",
+          description: "Create basebuddy-data/basebuddy.config.json.",
           status: "missing",
           title: "Config file",
         },
@@ -72,7 +72,7 @@ describe("API setup-required guard", () => {
 
   it("returns setup-required before project API auth reads the local session", async () => {
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [],

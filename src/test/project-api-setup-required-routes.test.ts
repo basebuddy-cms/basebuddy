@@ -43,7 +43,7 @@ describe("project API setup-required responses", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [],
       topology: "config-file",
     });
@@ -62,11 +62,11 @@ describe("project API setup-required responses", () => {
 
   it("returns a clean setup-required response before content API work runs", async () => {
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [],
-          description: "Create basebuddy.config.json in the app root.",
+          description: "Create basebuddy-data/basebuddy.config.json.",
           status: "missing",
           title: "Config file",
         },
@@ -96,11 +96,11 @@ describe("project API setup-required responses", () => {
 
   it("returns setup-required before project creation writes config", async () => {
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [],
-          description: "Create basebuddy.config.json in the app root.",
+          description: "Create basebuddy-data/basebuddy.config.json.",
           status: "missing",
           title: "Config file",
         },
@@ -136,11 +136,11 @@ describe("project API setup-required responses", () => {
 
   it("returns setup-required before project slug availability reads config", async () => {
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [],
-          description: "Create basebuddy.config.json in the app root.",
+          description: "Create basebuddy-data/basebuddy.config.json.",
           status: "missing",
           title: "Config file",
         },
@@ -166,11 +166,11 @@ describe("project API setup-required responses", () => {
 
   it("returns setup-required before project settings reads project access", async () => {
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [
         {
           checks: [],
-          description: "Create basebuddy.config.json in the app root.",
+          description: "Create basebuddy-data/basebuddy.config.json.",
           status: "missing",
           title: "Config file",
         },

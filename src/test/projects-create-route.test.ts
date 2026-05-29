@@ -164,7 +164,9 @@ describe("projects create route", () => {
       userId: "user-1",
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/projects");
-    expect(getBaseBuddyConfigPath()).toBe(join(process.cwd(), "basebuddy.config.json"));
+    expect(getBaseBuddyConfigPath()).toBe(
+      join(process.cwd(), "basebuddy-data", "basebuddy.config.json"),
+    );
   });
 
   it("ignores hosted-era project fields and stores only the config project record", async () => {

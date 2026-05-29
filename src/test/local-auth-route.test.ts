@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { getBaseBuddyConfigPath } from "@/lib/basebuddy-config/paths";
+import { getBaseBuddyAuditLogPath } from "@/lib/basebuddy-config/audit-log";
 import {
   createDefaultBaseBuddyConfig,
   type BaseBuddyConfig,
@@ -25,8 +26,8 @@ const hashPasswordForTest = async (plainTextPassword: string, salt: string) =>
 const readConfig = async () =>
   JSON.parse(await readFile(getBaseBuddyConfigPath(), "utf8")) as BaseBuddyConfig;
 
-const readAuditEvents = async (tempDir: string) => {
-  const contents = await readFile(join(tempDir, "basebuddy.audit.jsonl"), "utf8");
+const readAuditEvents = async () => {
+  const contents = await readFile(getBaseBuddyAuditLogPath(), "utf8");
 
   return contents.trim().split("\n").map((line) => JSON.parse(line));
 };
@@ -114,7 +115,7 @@ describe("local auth routes", () => {
     expect(JSON.stringify(config)).not.toContain(sessionCookieValue ?? "");
     expect(JSON.stringify(config)).not.toContain(password);
 
-    const auditEvents = await readAuditEvents(tempDir);
+    const auditEvents = await readAuditEvents();
 
     expect(auditEvents).toEqual([
       expect.objectContaining({
@@ -194,7 +195,7 @@ describe("local auth routes", () => {
     expect(body).toEqual({ error: "Invalid email or password." });
     expect(config.sessions).toHaveLength(0);
 
-    const auditEvents = await readAuditEvents(tempDir);
+    const auditEvents = await readAuditEvents();
 
     expect(auditEvents).toEqual([
       expect.objectContaining({
@@ -285,7 +286,7 @@ describe("local auth routes", () => {
     expect(logoutResponse.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
     expect(config.sessions).toHaveLength(0);
 
-    const auditEvents = await readAuditEvents(tempDir);
+    const auditEvents = await readAuditEvents();
 
     expect(auditEvents.map((event) => event.type)).toEqual([
       "auth.login.success",

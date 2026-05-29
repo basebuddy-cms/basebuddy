@@ -1,12 +1,12 @@
 # BaseBuddy Install Guide
 
-BaseBuddy is a self-hosted editor for existing Postgres/Supabase schemas. Fresh installs store BaseBuddy app state in one root file:
+BaseBuddy is a self-hosted editor for existing Postgres/Supabase schemas. Fresh installs store BaseBuddy app state in one local data folder:
 
 ```text
-process.cwd()/basebuddy.config.json
+process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
-The setup UI and CLI create that file for you. Do not commit it.
+The setup UI and CLI create that folder and file for you. Do not commit `basebuddy-data/`.
 
 ## Prerequisites
 
@@ -69,11 +69,11 @@ On `/onboarding`, complete **Connect to the database**, then enter:
 - owner email
 - owner password
 
-Click `Create setup`. BaseBuddy writes `basebuddy.config.json` in the app root and hashes the owner password. It does not write database URLs or service keys into the config file.
+Click `Create setup`. BaseBuddy writes `basebuddy-data/basebuddy.config.json` and hashes the owner password. It does not write database URLs or service keys into the config file.
 
 The next screen runs setup checks automatically. It verifies the env values, owner account, config-file state, and database connection before showing **Open BaseBuddy**.
 
-BaseBuddy also writes sign-in and local user audit events to `basebuddy.audit.jsonl` in the app root. Do not commit this file.
+BaseBuddy also writes sign-in and local user audit events to `basebuddy-data/basebuddy.audit.jsonl`. Do not commit `basebuddy-data/`.
 
 ## 4. Sign In
 
@@ -85,7 +85,7 @@ After setup is created:
 
 ## CLI Setup
 
-Agents or operators can create the same root config from the CLI:
+Agents or operators can create the same BaseBuddy data config from the CLI:
 
 ```sh
 pnpm basebuddy setup \
@@ -143,15 +143,15 @@ Before exposing BaseBuddy publicly:
 
 - run `pnpm basebuddy doctor`;
 - confirm required secrets are set in env, not in the repo;
-- confirm `basebuddy.config.json` is present on the server and ignored by git;
-- confirm the server has persistent writable storage for `basebuddy.config.json`;
+- confirm `basebuddy-data/basebuddy.config.json` is present on the server and `basebuddy-data/` is ignored by git;
+- confirm the server has persistent writable storage for `basebuddy-data/`;
 - place the app behind HTTPS;
 - set request body limits that match your upload policy;
 - use a shared upstream rate limiter if you run multiple app instances.
 
 Production responses include HSTS. Confirm HTTPS is working for the final domain before exposing the app to real users.
 
-BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys unless you provide durable writable storage for the app root. UI changes to projects, mappings, permissions, and sidebar layout write to `basebuddy.config.json` on the running server.
+BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys unless you provide durable writable storage for `basebuddy-data/`. UI changes to projects, mappings, permissions, and sidebar layout write to `basebuddy-data/basebuddy.config.json` on the running server.
 
 ## Next Steps
 

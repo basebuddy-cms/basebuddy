@@ -3,7 +3,7 @@
 Run BaseBuddy CLI commands from the app root. The CLI reads and writes:
 
 ```text
-process.cwd()/basebuddy.config.json
+process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
 Use CLI commands instead of hand-editing the config file. Env secrets still belong in `.env` or the production host.

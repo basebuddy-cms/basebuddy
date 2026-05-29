@@ -22,7 +22,7 @@ Set `BASEBUDDY_AUTH_SECRET` and `BASEBUDDY_CONTENT_DATABASE_URL` in `.env` or yo
 
 ## Cannot Sign In
 
-Confirm the owner user exists in `basebuddy.config.json`, the password is correct, and the app can read the config file.
+Confirm the owner user exists in `basebuddy-data/basebuddy.config.json`, the password is correct, and the app can read the config file.
 
 ## Content Does Not Load
 

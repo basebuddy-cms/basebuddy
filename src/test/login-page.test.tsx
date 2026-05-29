@@ -56,7 +56,7 @@ describe("login route", () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     getBaseBuddyConfigSetupStatusMock.mockResolvedValue({
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       sections: [],
       topology: "config-file",
     });

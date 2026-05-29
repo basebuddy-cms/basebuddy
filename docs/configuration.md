@@ -1,19 +1,19 @@
 # Configuration
 
-BaseBuddy app state lives in one root config file:
+BaseBuddy app state lives in one BaseBuddy data config file:
 
 ```text
-process.cwd()/basebuddy.config.json
+process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
 Onboarding and CLI setup create and update this file. It stores install metadata, local users, sessions, projects, members, permissions, invitations, saved mappings, and sidebar settings.
 
-Do not commit `basebuddy.config.json`.
+Do not commit `basebuddy-data/`.
 
 Audit events live beside it in:
 
 ```text
-process.cwd()/basebuddy.audit.jsonl
+process.cwd()/basebuddy-data/basebuddy.audit.jsonl
 ```
 
 Do not commit the audit log. It records sign-in, sign-out, and local user changes.

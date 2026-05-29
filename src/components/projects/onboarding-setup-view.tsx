@@ -68,7 +68,7 @@ const setupSteps: Array<{
 ];
 
 const fallbackSetupStatus: BaseBuddyConfigSetupStatus = {
-  configPath: "process.cwd()/basebuddy.config.json",
+  configPath: "process.cwd()/basebuddy-data/basebuddy.config.json",
   sections: [
     {
       checks: [
@@ -77,10 +77,10 @@ const fallbackSetupStatus: BaseBuddyConfigSetupStatus = {
           label: "Config file exists",
           required: true,
           status: "missing",
-          value: "Create basebuddy.config.json.",
+          value: "Create basebuddy-data/basebuddy.config.json.",
         },
       ],
-      description: "The root BaseBuddy config file at process.cwd()/basebuddy.config.json.",
+      description: "The BaseBuddy config file at process.cwd()/basebuddy-data/basebuddy.config.json.",
       status: "missing",
       title: "Config file",
     },

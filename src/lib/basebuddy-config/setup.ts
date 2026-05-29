@@ -129,9 +129,11 @@ export const getBaseBuddyConfigSetupStatus = async ({
 }: BaseBuddyConfigSetupDependencies = {}): Promise<BaseBuddyConfigSetupStatus> => {
   const configPath = getBaseBuddyConfigPath();
   const redactedStatus = await getRedactedBaseBuddyConfigStatus();
+  const configDirectory = dirname(configPath);
   const configFileWritable = redactedStatus.config.exists
     ? redactedStatus.config.writable
-    : await canAccess(dirname(configPath), constants.W_OK);
+    : (await canAccess(configDirectory, constants.W_OK)) ||
+      (await canAccess(dirname(configDirectory), constants.W_OK));
   const config = redactedStatus.config.valid ? await loadOptionalBaseBuddyConfig() : null;
   const runtimeEnv = readBaseBuddyRuntimeEnv();
   const databaseUrl = runtimeEnv.contentDatabaseUrl;
@@ -154,7 +156,7 @@ export const getBaseBuddyConfigSetupStatus = async ({
           ? "ready"
           : "invalid"
         : "missing",
-      value: redactedStatus.config.exists ? configPath : "Create basebuddy.config.json.",
+      value: redactedStatus.config.exists ? configPath : "Create basebuddy-data/basebuddy.config.json.",
     }),
     createCheck({
       key: "basebuddy.config.writable",
@@ -172,7 +174,7 @@ export const getBaseBuddyConfigSetupStatus = async ({
         : "missing",
       value: redactedStatus.config.exists
         ? redactedStatus.config.error ?? "valid"
-        : "Create basebuddy.config.json.",
+        : "Create basebuddy-data/basebuddy.config.json.",
     }),
   ];
   const ownerChecks: BaseBuddyConfigSetupCheck[] = [
@@ -341,7 +343,7 @@ export const getBaseBuddyConfigSetupStatus = async ({
   const sections: BaseBuddyConfigSetupSection[] = [
     {
       checks: configChecks,
-      description: "The root BaseBuddy config file at process.cwd()/basebuddy.config.json.",
+      description: "The BaseBuddy config file at process.cwd()/basebuddy-data/basebuddy.config.json.",
       status: getSectionStatus(configChecks),
       title: "Config file",
     },

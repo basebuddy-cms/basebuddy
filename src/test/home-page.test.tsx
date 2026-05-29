@@ -40,7 +40,7 @@ const readySetupStatus = {
       title: "App configuration",
     },
   ],
-  configPath: "/repo/basebuddy.config.json",
+  configPath: "/repo/basebuddy-data/basebuddy.config.json",
   topology: "config-file",
 };
 
@@ -78,7 +78,7 @@ describe("home page", () => {
           title: "App configuration",
         },
       ],
-      configPath: "/repo/basebuddy.config.json",
+      configPath: "/repo/basebuddy-data/basebuddy.config.json",
       topology: "config-file",
     });
 

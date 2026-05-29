@@ -65,7 +65,7 @@ type SeedEnvironment = {
 };
 
 const SELF_HOST_MEDIA_BUCKET = "pw-self-host-media";
-// Playwright seed writes BaseBuddy users, members, and mapping to basebuddy.config.json.
+// Playwright seed writes BaseBuddy users, members, and mapping to basebuddy-data/basebuddy.config.json.
 const SELF_HOST_TABLE_NAMES = {
   authors: "pw_self_host_authors",
   categories: "pw_self_host_categories",

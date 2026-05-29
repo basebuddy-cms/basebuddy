@@ -14,7 +14,7 @@ vi.mock("next/link", () => ({
 }));
 
 const incompleteStatus: BaseBuddyConfigSetupStatus = {
-  configPath: "/repo/basebuddy.config.json",
+  configPath: "/repo/basebuddy-data/basebuddy.config.json",
   sections: [
     {
       checks: [
@@ -23,10 +23,10 @@ const incompleteStatus: BaseBuddyConfigSetupStatus = {
           label: "Config file exists",
           required: true,
           status: "missing",
-          value: "Create basebuddy.config.json.",
+          value: "Create basebuddy-data/basebuddy.config.json.",
         },
       ],
-      description: "The root BaseBuddy config file at process.cwd()/basebuddy.config.json.",
+      description: "The BaseBuddy config file at process.cwd()/basebuddy-data/basebuddy.config.json.",
       status: "missing",
       title: "Config file",
     },
@@ -35,11 +35,11 @@ const incompleteStatus: BaseBuddyConfigSetupStatus = {
 };
 
 const readyStatus: BaseBuddyConfigSetupStatus = {
-  configPath: "/repo/basebuddy.config.json",
+  configPath: "/repo/basebuddy-data/basebuddy.config.json",
   sections: [
     {
       checks: [],
-      description: "The root BaseBuddy config file at process.cwd()/basebuddy.config.json.",
+      description: "The BaseBuddy config file at process.cwd()/basebuddy-data/basebuddy.config.json.",
       status: "ready",
       title: "Config file",
     },

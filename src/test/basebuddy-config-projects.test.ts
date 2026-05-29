@@ -48,7 +48,7 @@ describe("config-backed project access helpers", () => {
       typeof createDefaultBaseBuddyConfig
     >;
 
-  it("loads project member access from process.cwd()/basebuddy.config.json", async () => {
+  it("loads project member access from process.cwd()/basebuddy-data/basebuddy.config.json", async () => {
     const config = createDefaultBaseBuddyConfig({
       now: fixedNow,
     });
