@@ -65,4 +65,4 @@ pnpm start
 
 ## License
 
-BaseBuddy is licensed under AGPL-3.0-or-later. See [LICENSE.md](../LICENSE.md).
+BaseBuddy is licensed under AGPL-3.0-or-later. See [LICENSE](../LICENSE).

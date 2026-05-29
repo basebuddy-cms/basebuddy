@@ -19,7 +19,7 @@
   ·
   <a href="https://basebuddycms.com/support">Support</a>
   ·
-  <a href="./LICENSE.md">License</a>
+  <a href="./LICENSE">License</a>
   ·
   <a href="./SECURITY.md">Security</a>
   ·
