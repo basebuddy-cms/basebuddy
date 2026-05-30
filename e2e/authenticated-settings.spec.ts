@@ -12,7 +12,7 @@ test.describe("authenticated settings flows", () => {
     await expect(page.getByRole("heading", { level: 2, name: "Settings" })).toBeVisible();
     await expect(
       page.getByRole("main").getByText(
-        "Manage workspace details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
+        "Manage project details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
       ).first(),
     ).toBeVisible();
     await expect(page.getByText(seedState.users.owner.email)).toBeVisible();
@@ -63,7 +63,7 @@ test.describe("authenticated settings flows", () => {
     await expect(page).toHaveURL(/\/settings\?tab=general$/);
     await expect(
       page.getByRole("main").getByText(
-        "Manage workspace details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
+        "Manage project details, members, invitations, permissions, content mapping, and editor sidebar behavior.",
       ).first(),
     ).toBeVisible();
     await expect(page.getByText("Only project owners and admins can update these settings.")).toBeVisible();

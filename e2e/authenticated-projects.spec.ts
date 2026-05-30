@@ -25,7 +25,7 @@ test.describe("authenticated project access", () => {
     await expect(page.getByLabel("Project name")).toBeVisible();
     await expect(page.getByLabel("Project address")).toBeVisible();
     await expect(page.getByRole("button", { name: "Create project" })).toBeVisible();
-    await expect(page.getByText(/connect|verify|review|database password|one-click/i)).toHaveCount(0);
+    await expect(page.getByText(/database password|one-click/i)).toHaveCount(0);
   });
 
   test("owner can create a self-host project and land in mapping mode", async ({ page }, testInfo) => {

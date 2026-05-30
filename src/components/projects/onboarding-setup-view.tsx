@@ -33,7 +33,7 @@ type SetupFormState = {
   ownerPassword: string;
 };
 
-type SetupStepId = "database" | "account" | "checks";
+type SetupStepId = "app-data" | "database" | "account" | "checks";
 type AppStateChoice = "basebuddy-data" | "supabase-same-project" | "supabase-split-project";
 type TimelineStatus = BaseBuddyConfigSetupCheckStatus | "checking" | "pending";
 
@@ -54,6 +54,10 @@ const setupSteps: Array<{
   id: SetupStepId;
   label: string;
 }> = [
+  {
+    id: "app-data",
+    label: "Data",
+  },
   {
     id: "database",
     label: "Database",
@@ -327,29 +331,6 @@ function EnvKeysBlock({
   );
 }
 
-function CommandCopyRow({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    const ok = await copyText(value);
-    setCopied(ok);
-    window.setTimeout(() => setCopied(false), 1400);
-  };
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">Or use this command in terminal.</p>
-      <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
-        <code className="min-w-0 overflow-x-auto whitespace-nowrap text-xs text-foreground">{value}</code>
-        <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5" onClick={handleCopy}>
-          <Clipboard className="h-3.5 w-3.5" />
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function ConfirmationRow({
   checked,
   id,
@@ -455,7 +436,7 @@ export function OnboardingSetupView({
   const [currentStatus, setCurrentStatus] = useState<BaseBuddyConfigSetupStatus>(
     status ?? fallbackSetupStatus,
   );
-  const [activeStep, setActiveStep] = useState<SetupStepId>(readOnly ? "checks" : "database");
+  const [activeStep, setActiveStep] = useState<SetupStepId>(readOnly ? "checks" : "app-data");
   const [appStateChoice, setAppStateChoice] = useState<AppStateChoice>("basebuddy-data");
   const [envConfirmed, setEnvConfirmed] = useState(false);
   const [formState, setFormState] = useState<SetupFormState>(initialFormState);
@@ -690,7 +671,7 @@ export function OnboardingSetupView({
 
   const renderStepRail = () => (
     <div className="mb-12">
-      <div className="mx-auto grid max-w-md grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_2rem_minmax(0,1fr)] items-start">
+      <div className="mx-auto flex max-w-2xl items-start">
         {setupSteps.map((step, index) => {
           const reached = index <= activeStepIndex;
           const completed = index < activeStepIndex;
@@ -700,7 +681,7 @@ export function OnboardingSetupView({
               <button
                 type="button"
                 aria-label={`Step ${index + 1} ${step.label}`}
-                className="flex min-w-0 flex-col items-center gap-2 text-center sm:flex-row sm:justify-center sm:text-left"
+                className="flex w-16 shrink-0 flex-col items-center gap-2 text-center sm:w-28 sm:flex-row sm:justify-center sm:text-left"
                 disabled={index > activeStepIndex}
                 onClick={() => {
                   if (index <= activeStepIndex) {
@@ -726,7 +707,7 @@ export function OnboardingSetupView({
                 </span>
               </button>
               {index < setupSteps.length - 1 ? (
-                <div className={cn("mt-3.5 h-px w-full", completed ? "bg-primary" : "bg-border")} />
+                <div className={cn("mt-3.5 h-px min-w-4 flex-1", completed ? "bg-primary" : "bg-border")} />
               ) : null}
             </React.Fragment>
           );
@@ -735,53 +716,66 @@ export function OnboardingSetupView({
     </div>
   );
 
-  const renderDatabaseStep = () => (
+  const renderAppDataStep = () => (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Connect to the database</h1>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">
+          Choose where to store BaseBuddy data
+        </h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          Add the values from your database host, then create a strong auth secret for BaseBuddy sessions.
-        </p>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          Add storage keys only if you want images or files in BaseBuddy.
+          BaseBuddy stores users, projects, permissions, mapping, sidebar layout, and sessions here.
         </p>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-3">
         {[
           {
-            description: "Simple single-server setup.",
+            description: "Best when BaseBuddy runs on one server with persistent storage.",
             id: "basebuddy-data" as const,
-            label: "BaseBuddy data folder",
+            label: "Use basebuddy-data/ folder on same server",
           },
           {
-            description: "Store app data beside your content.",
-            id: "supabase-same-project" as const,
-            label: "Same Supabase project",
-          },
-          {
-            description: "Use a separate Supabase project.",
+            description: "Best when you want BaseBuddy data separate from your content database.",
             id: "supabase-split-project" as const,
-            label: "Separate Supabase project",
+            label: "A new Supabase/Postgres database",
+          },
+          {
+            description: "Best when you want one database to hold both content and BaseBuddy data.",
+            id: "supabase-same-project" as const,
+            label: "Same database as your content",
           },
         ].map((choice) => (
           <button
             key={choice.id}
             type="button"
             className={cn(
-              "rounded-md border px-3 py-2 text-left transition-colors",
+              "rounded-md border px-3 py-3 text-left transition-colors",
               appStateChoice === choice.id
                 ? "border-primary bg-primary/5"
                 : "border-border bg-background hover:bg-secondary/40",
             )}
             onClick={() => setAppStateChoice(choice.id)}
           >
-            <span className="block text-xs font-medium text-foreground">{choice.label}</span>
-            <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">
+            <span className="block text-sm font-medium text-foreground">{choice.label}</span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
               {choice.description}
             </span>
           </button>
         ))}
+      </div>
+    </div>
+  );
+
+  const renderDatabaseStep = () => (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Connect to your database</h1>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+          Add the values from your database host, then create a strong auth secret for BaseBuddy sessions.
+        </p>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+          Add storage keys only if you want images or files in BaseBuddy.
+        </p>
       </div>
 
       <EnvKeysBlock label=".env" keys={requiredEnvKeys} />
@@ -795,8 +789,6 @@ export function OnboardingSetupView({
           <EnvKeysBlock label="For S3 bucket storage" keys={s3StorageEnvKeys} />
         </div>
       </details>
-
-      <CommandCopyRow value="cp .env.example .env" />
 
       <ConfirmationRow
         checked={envConfirmed}
@@ -884,7 +876,12 @@ export function OnboardingSetupView({
     </div>
   );
 
-  const currentStepCanContinue = activeStep === "database" ? envConfirmed : Boolean(canContinueFromAccount);
+  const currentStepCanContinue =
+    activeStep === "app-data"
+      ? true
+      : activeStep === "database"
+        ? envConfirmed
+        : Boolean(canContinueFromAccount);
 
   return (
     <div className="min-h-screen bg-background">
@@ -905,6 +902,7 @@ export function OnboardingSetupView({
 
         <div className="mx-auto max-w-2xl">
           <div className="animate-fade-in">
+            {activeStep === "app-data" ? renderAppDataStep() : null}
             {activeStep === "database" ? renderDatabaseStep() : null}
             {activeStep === "account" ? renderAccountStep() : null}
             {activeStep === "checks" ? renderChecksStep() : null}

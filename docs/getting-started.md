@@ -39,11 +39,12 @@ BaseBuddy intentionally renders `/onboarding` before app data exists. That lets 
 ## First-Run Flow
 
 1. Open `/onboarding`.
-2. Complete **Connect to the database** by adding the required env values.
-3. Complete **Create account on BaseBuddy**.
-4. Let **Let's check the setup now** run automatically.
-5. Sign in with the owner account.
-6. Create a project and map your content tables.
+2. Complete **Choose where to store BaseBuddy data**.
+3. Complete **Connect to your database** by adding the required env values.
+4. Complete **Create account on BaseBuddy**.
+5. Let **Let's check the setup now** run automatically.
+6. Sign in with the owner account.
+7. Create a project and map your content tables.
 
 ## Production Build
 

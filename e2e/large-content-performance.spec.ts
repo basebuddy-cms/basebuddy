@@ -5,6 +5,8 @@ import { signInAsRole } from "./support/auth";
 const loadTestProjectId = process.env.BASEBUDDY_LOAD_TEST_PROJECT_ID?.trim() ?? "";
 const loadTestProjectSlug = process.env.BASEBUDDY_LOAD_TEST_PROJECT_SLUG?.trim() ?? "";
 const hasLoadTestTarget = Boolean(loadTestProjectId && loadTestProjectSlug);
+const loadTestRelationSearch =
+  process.env.BASEBUDDY_LOAD_TEST_RELATION_SEARCH?.trim() || "Category 499999";
 
 test.describe("large content performance smoke", () => {
   test.skip(!hasLoadTestTarget, "Set BASEBUDDY_LOAD_TEST_PROJECT_ID and BASEBUDDY_LOAD_TEST_PROJECT_SLUG to run large content browser smoke checks.");
@@ -12,11 +14,13 @@ test.describe("large content performance smoke", () => {
   test("browser session can search large relation options from the editor", async ({ page }) => {
     await signInAsRole(page, "owner");
 
-    const result = await page.evaluate(async ({ projectId }) => {
+    const result = await page.evaluate(async ({ projectId, relationSearch }) => {
       const measure = async () => {
         const startedAt = performance.now();
         const response = await fetch(
-          `/api/projects/${projectId}/content?view=relation_options&fieldKey=categories&search=Category%20499999&limit=20`,
+          `/api/projects/${projectId}/content?view=relation_options&fieldKey=categories&search=${encodeURIComponent(
+            relationSearch,
+          )}&limit=20`,
           {
             cache: "no-store",
           },
@@ -33,7 +37,9 @@ test.describe("large content performance smoke", () => {
       await measure();
       const startedAt = performance.now();
       const response = await fetch(
-        `/api/projects/${projectId}/content?view=relation_options&fieldKey=categories&search=Category%20499999&limit=20`,
+        `/api/projects/${projectId}/content?view=relation_options&fieldKey=categories&search=${encodeURIComponent(
+          relationSearch,
+        )}&limit=20`,
         {
           cache: "no-store",
         },
@@ -47,6 +53,7 @@ test.describe("large content performance smoke", () => {
       };
     }, {
       projectId: loadTestProjectId,
+      relationSearch: loadTestRelationSearch,
     });
 
     expect(result.status).toBe(200);

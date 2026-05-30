@@ -16,14 +16,14 @@ const createEntity = (table = "games"): ContentEntityMapping =>
 describe("content database access notices", () => {
   it("reports limited read access when a mapped table has rows but the connection reads none", async () => {
     const client = {
-      query: vi.fn(async () => ({
+      query: async <T,>() => ({
         rows: [
           {
             estimated_rows: "3908",
             rls_enabled: true,
           },
-        ],
-      })),
+        ] as T[],
+      }),
     };
 
     await expect(
@@ -72,14 +72,14 @@ describe("content database access notices", () => {
 
   it("treats unreadable RLS-enabled tables as limited even when the row estimate is unknown", async () => {
     const client = {
-      query: vi.fn(async () => ({
+      query: async <T,>() => ({
         rows: [
           {
             estimated_rows: "-1",
             rls_enabled: true,
           },
-        ],
-      })),
+        ] as T[],
+      }),
     };
 
     await expect(

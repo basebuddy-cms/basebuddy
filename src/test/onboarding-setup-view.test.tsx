@@ -83,10 +83,34 @@ describe("OnboardingSetupView", () => {
     vi.restoreAllMocks();
   });
 
-  it("starts with a focused database connection step", () => {
+  const continueToDatabaseStep = () => {
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+  };
+
+  const continueToAccountStep = () => {
+    continueToDatabaseStep();
+    fireEvent.click(screen.getByLabelText(/i added the env values/i));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+  };
+
+  it("starts by choosing where to store BaseBuddy data", () => {
     render(<OnboardingSetupView status={incompleteStatus} />);
 
-    expect(screen.getByRole("heading", { name: "Connect to the database" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose where to store BaseBuddy data" })).toBeInTheDocument();
+    expect(screen.getByText(/users, projects, permissions, mapping, sidebar layout, and sessions/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /use basebuddy-data\/ folder on same server/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /a new supabase\/postgres database/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /same database as your content/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+    expect(screen.queryByText("BASEBUDDY_CONTENT_DATABASE_URL")).not.toBeInTheDocument();
+  });
+
+  it("shows database env values after app-data selection", () => {
+    render(<OnboardingSetupView status={incompleteStatus} />);
+
+    continueToDatabaseStep();
+
+    expect(screen.getByRole("heading", { name: "Connect to your database" })).toBeInTheDocument();
     expect(
       screen.getByText(/add the values from your database host, then create a strong auth secret for basebuddy sessions/i),
     ).toBeInTheDocument();
@@ -98,15 +122,11 @@ describe("OnboardingSetupView", () => {
     expect(document.body.textContent).toContain("BASEBUDDY_CONTENT_DATABASE_URL=");
     expect(screen.queryByText((content) => content.includes("postgresql://user:password"))).not.toBeInTheDocument();
     expect(screen.queryByText(/[a-f0-9]{64}/i)).not.toBeInTheDocument();
-    expect(screen.getByText("cp .env.example .env")).toBeInTheDocument();
+    expect(screen.queryByText("cp .env.example .env")).not.toBeInTheDocument();
+    expect(screen.queryByText(/or use this command/i)).not.toBeInTheDocument();
     expect(screen.queryByText((content) => content.includes("`.env.local`"))).not.toBeInTheDocument();
     expect(screen.getByLabelText(/i added the env values/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
-    expect(
-      screen.getAllByText(/images and files/i)[0]?.compareDocumentPosition(
-        screen.getByText(/or use this command/i),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(document.body.textContent).toContain("BASEBUDDY_SUPABASE_URL=");
     expect(document.body.textContent).toContain("BASEBUDDY_SUPABASE_PUBLISHABLE_KEY=");
     expect(document.body.textContent).toContain("BASEBUDDY_SUPABASE_SECRET_KEY=");
@@ -116,15 +136,12 @@ describe("OnboardingSetupView", () => {
     expect(screen.queryByLabelText(/owner name/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /let's check the setup now/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/supabase auth/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/same project/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/different project/i)).not.toBeInTheDocument();
   });
 
-  it("collects account details on the second page", () => {
+  it("collects account details after database setup", () => {
     render(<OnboardingSetupView status={incompleteStatus} />);
 
-    fireEvent.click(screen.getByLabelText(/i added the env values/i));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    continueToAccountStep();
 
     expect(screen.getByRole("heading", { name: /create your basebuddy account/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/owner name/i)).toBeInTheDocument();
@@ -136,8 +153,7 @@ describe("OnboardingSetupView", () => {
   it("requires a real email and strong owner password before continuing from account setup", () => {
     render(<OnboardingSetupView status={incompleteStatus} />);
 
-    fireEvent.click(screen.getByLabelText(/i added the env values/i));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    continueToAccountStep();
     fireEvent.change(screen.getByLabelText(/owner name/i), {
       target: { value: "Owner User" },
     });
@@ -184,8 +200,7 @@ describe("OnboardingSetupView", () => {
 
     render(<OnboardingSetupView status={incompleteStatus} />);
 
-    fireEvent.click(screen.getByLabelText(/i added the env values/i));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    continueToAccountStep();
     fireEvent.change(screen.getByLabelText(/owner name/i), {
       target: { value: "Owner User" },
     });
@@ -273,8 +288,7 @@ describe("OnboardingSetupView", () => {
 
     render(<OnboardingSetupView status={incompleteStatus} />);
 
-    fireEvent.click(screen.getByLabelText(/i added the env values/i));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    continueToAccountStep();
     fireEvent.change(screen.getByLabelText(/owner name/i), {
       target: { value: "Owner User" },
     });

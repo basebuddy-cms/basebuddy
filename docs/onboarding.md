@@ -10,9 +10,10 @@ Onboarding asks for:
 
 The setup flow is:
 
-1. **Connect to the database**
-2. **Create account on BaseBuddy**
-3. **Let's check the setup now**
+1. **Choose where to store BaseBuddy data**
+2. **Connect to your database**
+3. **Create account on BaseBuddy**
+4. **Let's check the setup now**
 
 Onboarding shows the required env keys for auth signing and content database access. It does not collect database URLs or service keys into app data. The checks verify app data, owner account, env values, database role, and database connection.
 

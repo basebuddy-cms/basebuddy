@@ -9,7 +9,10 @@ vi.mock("server-only", () => ({}));
 
 import { createDefaultBaseBuddyConfig } from "@/lib/basebuddy-config/schema";
 import { getBaseBuddyConfigPath } from "@/lib/basebuddy-config/paths";
-import { runBaseBuddyCli } from "../../scripts/basebuddy-cli";
+import {
+  getBaseBuddyCliAppDataLocation,
+  runBaseBuddyCli,
+} from "../../scripts/basebuddy-cli";
 
 const fixedNow = "2026-05-27T00:00:00.000Z";
 const authSecret = "local-auth-secret-value-with-32-plus-chars";
@@ -99,6 +102,26 @@ describe("basebuddy CLI", () => {
     expect(result.stdout).toContain("user:create");
     expect(result.stdout).toContain("projects:create");
     expect(result.stdout).toContain("mapping:set");
+  });
+
+  it("prints the active app-data backend location for CLI user commands", () => {
+    vi.stubEnv("BASEBUDDY_APP_STATE_BACKEND", "supabase-same-project");
+    vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
+
+    const sameProjectLocation = getBaseBuddyCliAppDataLocation();
+
+    expect(sameProjectLocation).toContain("supabase same project: basebuddy.app_state");
+    expect(sameProjectLocation).toContain("set:");
+    expect(sameProjectLocation).not.toContain("db-pass");
+
+    vi.stubEnv("BASEBUDDY_APP_STATE_BACKEND", "supabase-split-project");
+    vi.stubEnv("BASEBUDDY_APP_STATE_DATABASE_URL", "postgresql://app-state:secret@example.com:5432/postgres");
+
+    const splitProjectLocation = getBaseBuddyCliAppDataLocation();
+
+    expect(splitProjectLocation).toContain("supabase separate project: basebuddy.app_state");
+    expect(splitProjectLocation).toContain("set:");
+    expect(splitProjectLocation).not.toContain("secret");
   });
 
   it("setup creates only process.cwd()/basebuddy-data/basebuddy.config.json without storing env secrets", async () => {

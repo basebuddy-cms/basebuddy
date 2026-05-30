@@ -1,15 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { Client as PgClient } from "pg";
 
+import { getBaseBuddyPostgresSslConfig } from "../src/lib/basebuddy-config/database-ssl";
 import { signInAsRole } from "./support/auth";
-import {
-  resolvePlaywrightSeedDatabaseUrl,
-  resolvePlaywrightSeedRootCertificate,
-  resolvePlaywrightSeedRootCertificateFile,
-  shouldUsePlaywrightSeedDatabaseSsl,
-} from "./support/seed-env";
+import { resolvePlaywrightSeedDatabaseUrl } from "./support/seed-env";
 
 const SEEDED_SELF_HOST_POST_ID = "20000000-0000-0000-0000-000000000501";
 const SEEDED_SELF_HOST_POST_TITLE = "Self Host Assigned Draft";
@@ -21,31 +15,9 @@ const createContentDbClient = async () => {
     throw new Error("Missing required environment variable: BASEBUDDY_CONTENT_DATABASE_URL");
   }
 
-  const inlineRootCertificate =
-    resolvePlaywrightSeedRootCertificate(process.env)?.replace(/\\n/g, "\n").trim() ?? null;
-  const rootCertificateFile = resolvePlaywrightSeedRootCertificateFile(process.env);
-  const rootCertificate = inlineRootCertificate
-    ? inlineRootCertificate
-    : rootCertificateFile
-      ? readFileSync(
-          path.isAbsolute(rootCertificateFile)
-            ? rootCertificateFile
-            : path.join(process.cwd(), rootCertificateFile),
-          "utf8",
-        ).trim()
-      : null;
   const client = new PgClient({
     connectionString,
-    ssl: rootCertificate
-      ? {
-          ca: rootCertificate,
-          rejectUnauthorized: true,
-        }
-      : shouldUsePlaywrightSeedDatabaseSsl(process.env, connectionString)
-        ? {
-            rejectUnauthorized: false,
-          }
-        : undefined,
+    ssl: getBaseBuddyPostgresSslConfig(connectionString),
   });
 
   await client.connect();

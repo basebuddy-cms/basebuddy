@@ -23,6 +23,7 @@ import {
   normalizeContentProjectMapping,
 } from "@/lib/content-runtime/mapping";
 import type { ContentProjectContext } from "@/lib/content-runtime/server-project-context";
+import { getContentSchemaOptions } from "@/lib/content-runtime/shared";
 
 const fixedNow = "2026-05-28T00:00:00.000Z";
 const authSecret = "local-auth-secret-value-with-32-plus-chars";
@@ -218,18 +219,35 @@ describe("server project mapping access", () => {
       apiUrl: null,
       connectionString: "postgres://user:password@localhost:5432/postgres",
       memberAccess: {
-        accessibleAuthorIds: null,
-        role: "owner",
+        authorScopes: [],
+        permissions: [
+          "author.scope.manage",
+          "content.publish.all",
+          "content.publish.authored",
+          "content.read.all",
+          "content.read.authored",
+          "content.write.all",
+          "content.write.authored",
+          "mapping.read",
+          "mapping.write",
+          "member.invite",
+          "member.manage",
+          "member.read",
+          "project.delete",
+          "project.read",
+          "project.update",
+        ],
+        roles: ["owner"],
       },
       projectId: "project-1",
       projectSlug: "demo-project",
       publishableKey: null,
-      schemaOptions: {},
+      schemaOptions: getContentSchemaOptions(null),
       user: {
+        avatarUrl: null,
         email: "owner@example.com",
         id: "user-1",
-        name: null,
-        role: "owner",
+        name: "Owner",
       },
     } satisfies ContentProjectContext;
 

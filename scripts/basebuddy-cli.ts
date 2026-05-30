@@ -7,11 +7,16 @@ import { createBaseBuddyConfigUser } from "../src/lib/basebuddy-config/auth";
 import { createInitialBaseBuddySetup } from "../src/lib/basebuddy-config/initial-setup";
 import { getBaseBuddyConfigPath } from "../src/lib/basebuddy-config/paths";
 import {
+  getBaseBuddyAppStateBackend,
+  getBaseBuddyAppStateDatabaseUrl,
+} from "../src/lib/basebuddy-config/app-state-backend";
+import {
   ensureBaseBuddyConfig,
   loadBaseBuddyConfig,
   loadOptionalBaseBuddyConfig,
   writeBaseBuddyConfig,
 } from "../src/lib/basebuddy-config/store";
+import { redactDatabaseUrl } from "../src/lib/basebuddy-config/env";
 import {
   getBaseBuddyConfigSetupStatus,
   isBaseBuddyConfigSetupReady,
@@ -263,6 +268,24 @@ const getContentDatabaseUrl = () => {
   }
 
   return value;
+};
+
+export const getBaseBuddyCliAppDataLocation = () => {
+  const backend = getBaseBuddyAppStateBackend();
+
+  if (backend === "basebuddy-data") {
+    return getBaseBuddyConfigPath();
+  }
+
+  const databaseUrl = getBaseBuddyAppStateDatabaseUrl();
+  const location =
+    backend === "supabase-same-project"
+      ? "supabase same project: basebuddy.app_state"
+      : "supabase separate project: basebuddy.app_state";
+
+  return databaseUrl
+    ? `${location} (${redactDatabaseUrl(databaseUrl)})`
+    : location;
 };
 
 const quotePostgresIdentifier = (value: string) => `"${value.replace(/"/g, "\"\"")}"`;
@@ -1342,7 +1365,7 @@ const runUserCreateCommand = async (
       stdout,
       JSON.stringify(
         {
-          configPath: getBaseBuddyConfigPath(),
+          configPath: getBaseBuddyCliAppDataLocation(),
           user: createdUser
             ? {
                 createdAt: createdUser.createdAt,
@@ -1360,7 +1383,7 @@ const runUserCreateCommand = async (
   } else {
     writeLine(stdout, "BaseBuddy user created");
     writeLine(stdout);
-    writeLine(stdout, `App data: ${getBaseBuddyConfigPath()}`);
+    writeLine(stdout, `App data: ${getBaseBuddyCliAppDataLocation()}`);
     writeLine(stdout, `User: ${createdUser?.email ?? email}`);
     writeLine(stdout, "Password: stored securely");
   }
@@ -1384,7 +1407,7 @@ const runUsersListCommand = async (
   const users = config.users.map(toPublicUser);
 
   if (parsed.options.json) {
-    writeJson(stdout, { configPath: getBaseBuddyConfigPath(), users });
+    writeJson(stdout, { configPath: getBaseBuddyCliAppDataLocation(), users });
   } else {
     writeLine(stdout, "BaseBuddy users");
     for (const user of users) {

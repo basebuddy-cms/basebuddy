@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Client as PgClient } from "pg";
 
 import { createBaseBuddyConfigUser } from "../../src/lib/basebuddy-config/auth";
+import { getBaseBuddyPostgresSslConfig } from "../../src/lib/basebuddy-config/database-ssl";
 import {
   addConfigProjectMemberByEmail,
   ConfigProjectSlugConflictError,
@@ -39,7 +40,6 @@ import {
   resolvePlaywrightSeedProjectSlug,
   resolvePlaywrightSeedRootCertificate,
   resolvePlaywrightSeedRootCertificateFile,
-  shouldUsePlaywrightSeedDatabaseSsl,
 } from "../support/seed-env";
 
 type SupabaseLikeClient = any;
@@ -371,11 +371,7 @@ const createPgClient = async ({
               ca: rootCertificate,
               rejectUnauthorized: true,
             }
-          : shouldUsePlaywrightSeedDatabaseSsl(process.env, connectionString)
-            ? {
-                rejectUnauthorized: false,
-              }
-            : undefined,
+          : getBaseBuddyPostgresSslConfig(connectionString),
         statement_timeout: 120_000,
       });
 
