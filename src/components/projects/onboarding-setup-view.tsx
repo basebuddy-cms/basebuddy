@@ -33,7 +33,7 @@ type SetupFormState = {
   ownerPassword: string;
 };
 
-type SetupStepId = "app-data" | "database" | "account" | "checks";
+type SetupStepId = "app-data" | "database" | "app-data-schema" | "account" | "checks";
 type AppStateChoice = "basebuddy-data" | "supabase-same-project" | "supabase-split-project";
 type TimelineStatus = BaseBuddyConfigSetupCheckStatus | "checking" | "pending";
 
@@ -61,6 +61,10 @@ const setupSteps: Array<{
   {
     id: "database",
     label: "Database",
+  },
+  {
+    id: "app-data-schema",
+    label: "Tables",
   },
   {
     id: "account",
@@ -331,13 +335,40 @@ function EnvKeysBlock({
   );
 }
 
+function CodeBlock({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const ok = await copyText(value);
+    setCopied(ok);
+    window.setTimeout(() => setCopied(false), 1400);
+  };
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-muted/30">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1.5" onClick={handleCopy}>
+          <Clipboard className="h-3.5 w-3.5" />
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-xs leading-6 text-foreground">
+        <code>{value}</code>
+      </pre>
+    </div>
+  );
+}
+
 function ConfirmationRow({
   checked,
   id,
+  label = "I added the env values",
   onChange,
 }: {
   checked: boolean;
   id: string;
+  label?: string;
   onChange: () => void;
 }) {
   return (
@@ -352,7 +383,7 @@ function ConfirmationRow({
         type="checkbox"
         onChange={onChange}
       />
-      <span className="block text-sm font-medium text-foreground">I added the env values</span>
+      <span className="block text-sm font-medium text-foreground">{label}</span>
     </label>
   );
 }
@@ -439,6 +470,7 @@ export function OnboardingSetupView({
   const [activeStep, setActiveStep] = useState<SetupStepId>(readOnly ? "checks" : "app-data");
   const [appStateChoice, setAppStateChoice] = useState<AppStateChoice>("basebuddy-data");
   const [envConfirmed, setEnvConfirmed] = useState(false);
+  const [appDataTablesConfirmed, setAppDataTablesConfirmed] = useState(false);
   const [formState, setFormState] = useState<SetupFormState>(initialFormState);
   const [createdEmail, setCreatedEmail] = useState<string | null>(null);
   const [runningChecks, setRunningChecks] = useState(false);
@@ -453,8 +485,12 @@ export function OnboardingSetupView({
   const [visibleTimelineCount, setVisibleTimelineCount] = useState(readOnly ? timelineItems.length : 0);
   const timelineTimeoutsRef = useRef<number[]>([]);
   const checksStartedRef = useRef(false);
+  const needsAppDataSchemaStep = appStateChoice !== "basebuddy-data";
+  const activeSetupSteps = needsAppDataSchemaStep
+    ? setupSteps
+    : setupSteps.filter((step) => step.id !== "app-data-schema");
   const activeStepIndex = Math.max(
-    setupSteps.findIndex((step) => step.id === activeStep),
+    activeSetupSteps.findIndex((step) => step.id === activeStep),
     0,
   );
   const signInHref = createdEmail
@@ -660,19 +696,19 @@ export function OnboardingSetupView({
       checksStartedRef.current = false;
     }
 
-    const previousStep = setupSteps[Math.max(activeStepIndex - 1, 0)];
+    const previousStep = activeSetupSteps[Math.max(activeStepIndex - 1, 0)];
     setActiveStep(previousStep.id);
   };
 
   const goToNextStep = () => {
-    const nextStep = setupSteps[Math.min(activeStepIndex + 1, setupSteps.length - 1)];
+    const nextStep = activeSetupSteps[Math.min(activeStepIndex + 1, activeSetupSteps.length - 1)];
     setActiveStep(nextStep.id);
   };
 
   const renderStepRail = () => (
     <div className="mb-12">
       <div className="mx-auto flex max-w-2xl items-start">
-        {setupSteps.map((step, index) => {
+        {activeSetupSteps.map((step, index) => {
           const reached = index <= activeStepIndex;
           const completed = index < activeStepIndex;
 
@@ -706,7 +742,7 @@ export function OnboardingSetupView({
                   {step.label}
                 </span>
               </button>
-              {index < setupSteps.length - 1 ? (
+              {index < activeSetupSteps.length - 1 ? (
                 <div className={cn("mt-3.5 h-px min-w-4 flex-1", completed ? "bg-primary" : "bg-border")} />
               ) : null}
             </React.Fragment>
@@ -754,7 +790,11 @@ export function OnboardingSetupView({
                 ? "border-primary bg-primary/5"
                 : "border-border bg-background hover:bg-secondary/40",
             )}
-            onClick={() => setAppStateChoice(choice.id)}
+            onClick={() => {
+              setAppStateChoice(choice.id);
+              setEnvConfirmed(false);
+              setAppDataTablesConfirmed(false);
+            }}
           >
             <span className="block text-sm font-medium text-foreground">{choice.label}</span>
             <span className="mt-1 block text-xs leading-5 text-muted-foreground">
@@ -794,6 +834,51 @@ export function OnboardingSetupView({
         checked={envConfirmed}
         id="basebuddy-env-confirmed"
         onChange={() => setEnvConfirmed((currentValue) => !currentValue)}
+      />
+    </div>
+  );
+
+  const renderAppDataSchemaStep = () => (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">
+          Prepare BaseBuddy data tables
+        </h1>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+          Run this after the env values are set. It creates only BaseBuddy tables for users,
+          projects, permissions, mapping, sessions, and audit events.
+        </p>
+      </div>
+
+      <CodeBlock
+        label="Terminal"
+        value={[
+          "pnpm basebuddy app-data:migrate",
+          "pnpm basebuddy app-data:check",
+        ].join("\n")}
+      />
+
+      <details className="rounded-md border border-border bg-background">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">
+          Run SQL manually instead
+        </summary>
+        <div className="space-y-3 border-t border-border p-3">
+          <p className="text-sm leading-6 text-muted-foreground">
+            Use this if your BaseBuddy database role cannot create schemas or tables.
+          </p>
+          <CodeBlock label="Print SQL" value="pnpm basebuddy app-data:sql" />
+          <p className="text-xs leading-5 text-muted-foreground">
+            The SQL creates <span className="text-foreground">basebuddy.app_state</span> and{" "}
+            <span className="text-foreground">basebuddy.audit_events</span>.
+          </p>
+        </div>
+      </details>
+
+      <ConfirmationRow
+        checked={appDataTablesConfirmed}
+        id="basebuddy-app-data-tables-confirmed"
+        label="I prepared the BaseBuddy data tables"
+        onChange={() => setAppDataTablesConfirmed((currentValue) => !currentValue)}
       />
     </div>
   );
@@ -881,7 +966,9 @@ export function OnboardingSetupView({
       ? true
       : activeStep === "database"
         ? envConfirmed
-        : Boolean(canContinueFromAccount);
+        : activeStep === "app-data-schema"
+          ? appDataTablesConfirmed
+          : Boolean(canContinueFromAccount);
 
   return (
     <div className="min-h-screen bg-background">
@@ -904,6 +991,7 @@ export function OnboardingSetupView({
           <div className="animate-fade-in">
             {activeStep === "app-data" ? renderAppDataStep() : null}
             {activeStep === "database" ? renderDatabaseStep() : null}
+            {activeStep === "app-data-schema" ? renderAppDataSchemaStep() : null}
             {activeStep === "account" ? renderAccountStep() : null}
             {activeStep === "checks" ? renderChecksStep() : null}
           </div>

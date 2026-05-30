@@ -138,6 +138,38 @@ describe("OnboardingSetupView", () => {
     expect(screen.queryByText(/supabase auth/i)).not.toBeInTheDocument();
   });
 
+  it("adds a BaseBuddy data tables step for Supabase/Postgres app data", () => {
+    render(<OnboardingSetupView status={incompleteStatus} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /a new supabase\/postgres database/i }));
+    continueToDatabaseStep();
+    fireEvent.click(screen.getByLabelText(/i added the env values/i));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(screen.getByRole("heading", { name: /prepare basebuddy data tables/i })).toBeInTheDocument();
+    expect(screen.getByText(/run this after the env values are set/i)).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("pnpm basebuddy app-data:migrate"))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("pnpm basebuddy app-data:check"))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("basebuddy.app_state"))).toBeInTheDocument();
+    expect(screen.getByLabelText(/i prepared the basebuddy data tables/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(/i prepared the basebuddy data tables/i));
+    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(screen.getByRole("heading", { name: /create your basebuddy account/i })).toBeInTheDocument();
+  });
+
+  it("skips the BaseBuddy data tables step for basebuddy-data folder setup", () => {
+    render(<OnboardingSetupView status={incompleteStatus} />);
+
+    continueToAccountStep();
+
+    expect(screen.getByRole("heading", { name: /create your basebuddy account/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /prepare basebuddy data tables/i })).not.toBeInTheDocument();
+  });
+
   it("collects account details after database setup", () => {
     render(<OnboardingSetupView status={incompleteStatus} />);
 

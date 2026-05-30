@@ -49,6 +49,19 @@ BASEBUDDY_APP_STATE_DATABASE_URL=
 
 Those DB-backed options use the BaseBuddy-owned `basebuddy.app_state` and `basebuddy.audit_events` tables. Use CLI/UI commands instead of editing rows directly.
 
+Prepare DB-backed app data with:
+
+```sh
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+If the app-data role cannot create schemas or tables, print SQL with:
+
+```sh
+pnpm basebuddy app-data:sql
+```
+
 Audit events live here:
 
 ```text
@@ -83,9 +96,10 @@ BASEBUDDY_S3_SECRET_ACCESS_KEY=
 2. Copy `.env.example` to `.env` or set equivalent production env values.
 3. Set `BASEBUDDY_AUTH_SECRET` and `BASEBUDDY_CONTENT_DATABASE_URL`.
 4. Run `pnpm basebuddy doctor`.
-5. Create setup with onboarding UI or `pnpm basebuddy setup`.
-6. Start the app with `pnpm start` after build, or the repo's documented development command while developing.
-7. Create projects, users, permissions, mappings, sidebar layout, and storage metadata through the UI or CLI.
+5. If Supabase/Postgres app data is selected, run `pnpm basebuddy app-data:migrate` and `pnpm basebuddy app-data:check`.
+6. Create setup with onboarding UI or `pnpm basebuddy setup`.
+7. Start the app with `pnpm start` after build, or the repo's documented development command while developing.
+8. Create projects, users, permissions, mappings, sidebar layout, and storage metadata through the UI or CLI.
 
 Prefer CLI commands over hand-editing files or app-data rows.
 
@@ -99,6 +113,9 @@ Setup:
 pnpm basebuddy doctor
 pnpm basebuddy doctor --json
 pnpm basebuddy doctor --skip-db-check
+pnpm basebuddy app-data:sql
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
 pnpm basebuddy setup
 pnpm basebuddy setup --owner-email owner@example.com --owner-name "Owner" --owner-password "strong-password"
 pnpm setup:check

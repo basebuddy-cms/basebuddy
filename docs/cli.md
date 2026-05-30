@@ -12,6 +12,8 @@ If `BASEBUDDY_APP_STATE_BACKEND` is `supabase-same-project` or `supabase-split-p
 
 Use CLI commands instead of hand-editing files or database rows. Env secrets still belong in `.env` or the production host.
 
+Use [App Data Storage Options](./app-data-storage-options.md) before deciding which backend the CLI should write to.
+
 ## Setup
 
 ```sh
@@ -35,6 +37,20 @@ BASEBUDDY_APP_STATE_DATABASE_URL=
 ```
 
 `doctor` also reports broad database roles such as `postgres`. Use a restricted role for production so BaseBuddy can only read and edit the tables and columns you grant.
+
+## Supabase/Postgres App Data Tables
+
+These commands are only needed when `BASEBUDDY_APP_STATE_BACKEND` is `supabase-same-project` or `supabase-split-project`.
+
+```sh
+pnpm basebuddy app-data:sql
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+`app-data:migrate` creates only the BaseBuddy-owned `basebuddy.app_state` and `basebuddy.audit_events` tables. It does not touch user content tables.
+
+Use `app-data:sql` when the BaseBuddy runtime database role cannot create schemas or tables. Copy the printed SQL into the database SQL editor with an admin role, then run `app-data:check`.
 
 ## Users
 

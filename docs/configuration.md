@@ -28,9 +28,24 @@ BaseBuddy supports three app data choices:
 | `supabase-same-project` | `BASEBUDDY_APP_STATE_BACKEND=supabase-same-project` | BaseBuddy stores app data in the same Postgres/Supabase project as your content, inside the BaseBuddy-owned `basebuddy` schema. |
 | `supabase-split-project` | `BASEBUDDY_APP_STATE_BACKEND=supabase-split-project` and `BASEBUDDY_APP_STATE_DATABASE_URL=` | BaseBuddy stores app data in a separate Postgres/Supabase project, also inside the `basebuddy` schema. |
 
+For the full comparison, read [App Data Storage Options](./app-data-storage-options.md).
+
 The content database URL still stays in `BASEBUDDY_CONTENT_DATABASE_URL`. BaseBuddy does not store content database passwords, service keys, or storage keys in app data.
 
-If the app-data database user can create schemas, BaseBuddy creates the `basebuddy.app_state` and `basebuddy.audit_events` tables during setup. If your host requires manual SQL, use [`docs/sql/basebuddy-app-state-postgres.sql`](./sql/basebuddy-app-state-postgres.sql).
+If the app-data database user can create schemas, run the CLI migration before creating the owner account:
+
+```sh
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+If your host requires manual SQL, print the same SQL with:
+
+```sh
+pnpm basebuddy app-data:sql
+```
+
+The repository copy lives at [`docs/sql/basebuddy-app-state-postgres.sql`](./sql/basebuddy-app-state-postgres.sql). It creates only `basebuddy.app_state` and `basebuddy.audit_events`.
 
 ## Required Env
 

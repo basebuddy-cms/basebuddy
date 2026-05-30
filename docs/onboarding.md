@@ -12,12 +12,28 @@ The setup flow is:
 
 1. **Choose where to store BaseBuddy data**
 2. **Connect to your database**
-3. **Create account on BaseBuddy**
-4. **Let's check the setup now**
+3. **Prepare BaseBuddy data tables** when Supabase/Postgres app data is selected
+4. **Create account on BaseBuddy**
+5. **Let's check the setup now**
 
 Onboarding shows the required env keys for auth signing and content database access. It does not collect database URLs or service keys into app data. The checks verify app data, owner account, env values, database role, and database connection.
 
-It does not ask users to choose custom paths or configure an external auth provider. If users choose Supabase/Postgres app data, BaseBuddy uses only the BaseBuddy-owned `basebuddy` schema.
+It does not ask users to choose custom paths or configure an external auth provider. If users choose Supabase/Postgres app data, BaseBuddy uses only the BaseBuddy-owned `basebuddy` schema. [App Data Storage Options](./app-data-storage-options.md) explains the differences between `basebuddy-data/`, a new Supabase/Postgres database, and the same database as your content.
+
+Onboarding asks users to run:
+
+```sh
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+If the app-data database role cannot create schemas or tables, use:
+
+```sh
+pnpm basebuddy app-data:sql
+```
+
+Then run the printed SQL in the database SQL editor.
 
 ## Ready State
 

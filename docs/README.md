@@ -2,7 +2,7 @@
 
 Everything you need to install, configure, operate, and contribute to BaseBuddy.
 
-Start with [Getting Started](./getting-started.md), then [Onboarding](./onboarding.md), then [Projects and Mapping](./projects-and-mapping.md). Operators and agents should use [Agent CLI Setup](./agent-cli-setup.md) and the [CLI](./cli.md) for config-backed setup, schema inspection, mapping drafts, project administration, permissions, sidebar layout, and storage metadata.
+Start with [Getting Started](./getting-started.md), then [Onboarding](./onboarding.md), then [Projects and Mapping](./projects-and-mapping.md). Use [App Data Storage Options](./app-data-storage-options.md) before choosing between `basebuddy-data/`, a separate Supabase/Postgres database, and the same database as your content. Operators and agents should use [Agent CLI Setup](./agent-cli-setup.md) and the [CLI](./cli.md) for config-backed setup, schema inspection, mapping drafts, project administration, permissions, sidebar layout, and storage metadata.
 
 ## Recommended Path
 

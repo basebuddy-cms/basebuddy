@@ -42,7 +42,7 @@ Open setup:
 http://localhost:8080/onboarding
 ```
 
-## 2. Connect To The Database
+## 2. Connect To Your Database
 
 Create `.env` for local testing, or set the same values in production:
 
@@ -75,21 +75,40 @@ For local Supabase content databases, add `?sslmode=disable` to the database URL
 
 For production, use a restricted database role instead of the broad `postgres` owner. Start from [`docs/sql/restricted-content-role.sql`](./docs/sql/restricted-content-role.sql), then grant only the tables and columns editors should use.
 
-## 3. Create The Owner Account
+## 3. Prepare App-Data Tables
 
-On `/onboarding`, complete **Connect to the database**, then enter:
+Skip this section when you use the default `basebuddy-data/` folder.
+
+For Supabase/Postgres app data, run:
+
+```sh
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+If your app-data database role cannot create schemas or tables, print the SQL and run it in your database SQL editor:
+
+```sh
+pnpm basebuddy app-data:sql
+```
+
+This creates only `basebuddy.app_state` and `basebuddy.audit_events`.
+
+## 4. Create The Owner Account
+
+On `/onboarding`, complete **Connect to your database**, prepare app-data tables when that page appears, then enter:
 
 - owner name
 - owner email
 - owner password
 
-Click `Create setup`. BaseBuddy writes `basebuddy-data/basebuddy.config.json` and hashes the owner password. It does not write database URLs or service keys into the config file.
+Continue through setup. BaseBuddy writes the selected app-data backend and hashes the owner password. It does not write database URLs or service keys into app data.
 
 The next screen runs setup checks automatically. It verifies the env values, owner account, app-data state, database role, and database connection before showing **Open BaseBuddy**.
 
 BaseBuddy also writes sign-in and local user audit events to `basebuddy-data/basebuddy.audit.jsonl`. Do not commit `basebuddy-data/`.
 
-## 4. Sign In
+## 5. Sign In
 
 After setup is created:
 
@@ -100,6 +119,13 @@ After setup is created:
 ## CLI Setup
 
 Agents or operators can create the same BaseBuddy data config from the CLI:
+
+```sh
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+Skip those two commands when you use the default `basebuddy-data/` folder.
 
 ```sh
 pnpm basebuddy setup \

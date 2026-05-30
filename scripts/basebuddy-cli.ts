@@ -12,6 +12,7 @@ import {
 } from "../src/lib/basebuddy-config/app-state-backend";
 import {
   ensureBaseBuddyConfig,
+  getPostgresAppStateQueryClient,
   loadBaseBuddyConfig,
   loadOptionalBaseBuddyConfig,
   writeBaseBuddyConfig,
@@ -22,6 +23,11 @@ import {
   isBaseBuddyConfigSetupReady,
   type BaseBuddyConfigSetupSection,
 } from "../src/lib/basebuddy-config/setup";
+import {
+  BASEBUDDY_POSTGRES_APP_STATE_SETUP_SQL,
+  ensurePostgresBaseBuddyAppStateSchema,
+  type PostgresBaseBuddyConfigQueryClient,
+} from "../src/lib/basebuddy-config/postgres-app-state-store";
 import {
   addConfigProjectMemberByEmail,
   createConfigProject,
@@ -69,6 +75,7 @@ import {
 } from "../src/lib/content-runtime/introspection";
 
 type BaseBuddyCliDependencies = {
+  appDataQueryClient?: () => PostgresBaseBuddyConfigQueryClient;
   introspectContentSchema?: (options: CliSchemaInspectOptions) => Promise<ContentSchemaIntrospection>;
   now?: () => Date | string;
   queryDatabase?: (connectionString: string) => Promise<void>;
@@ -286,6 +293,25 @@ export const getBaseBuddyCliAppDataLocation = () => {
   return databaseUrl
     ? `${location} (${redactDatabaseUrl(databaseUrl)})`
     : location;
+};
+
+const getBaseBuddyCliAppDataQueryClient = (dependencies: BaseBuddyCliDependencies) =>
+  dependencies.appDataQueryClient?.() ?? getPostgresAppStateQueryClient();
+
+const checkBaseBuddyAppDataTables = async (
+  client: PostgresBaseBuddyConfigQueryClient,
+) => {
+  const result = await client.query<{
+    app_state: string | null;
+    audit_events: string | null;
+  }>(
+    `select
+       to_regclass('basebuddy.app_state')::text as app_state,
+       to_regclass('basebuddy.audit_events')::text as audit_events`,
+  );
+  const row = result.rows[0];
+
+  return Boolean(row?.app_state && row.audit_events);
 };
 
 const quotePostgresIdentifier = (value: string) => `"${value.replace(/"/g, "\"\"")}"`;
@@ -675,6 +701,14 @@ const getAgentSetupWorkflow = () => [
   {
     command: "pnpm basebuddy doctor",
     purpose: "Check env, config, owner account, and database readiness.",
+  },
+  {
+    command: "pnpm basebuddy app-data:migrate",
+    purpose: "Prepare BaseBuddy app-data tables when using Supabase/Postgres app data; no-op for basebuddy-data.",
+  },
+  {
+    command: "pnpm basebuddy app-data:check",
+    purpose: "Verify Supabase/Postgres app-data tables before creating the owner account.",
   },
   {
     command: "pnpm basebuddy setup",
@@ -1102,6 +1136,9 @@ const printMainHelp = (write: (chunk: string) => void) => {
   writeLine(write, "  doctor          Check BaseBuddy setup readiness.");
   writeLine(write, "  setup           Create BaseBuddy app data after env is configured.");
   writeLine(write, "  agent:setup     Print the recommended agent-first CLI setup workflow.");
+  writeLine(write, "  app-data:sql    Print SQL for Supabase/Postgres app-data tables.");
+  writeLine(write, "  app-data:migrate Create Supabase/Postgres app-data tables.");
+  writeLine(write, "  app-data:check  Verify Supabase/Postgres app-data tables.");
   writeLine(write, "  users:list      List local config-backed users.");
   writeLine(write, "  user:create     Create a local config-backed user.");
   writeLine(write, "  users:delete    Delete a local user when safe.");
@@ -1332,6 +1369,128 @@ const runSetupCommand = async (
     writeLine(stdout, `App data: ${status.configPath}`);
     writeLine(stdout, `Ready: ${ready ? "yes" : "no"}`);
     printStatusSections(stdout, status.sections);
+  }
+
+  return 0;
+};
+
+const runAppDataSqlCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "app-data:sql", ["json"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy app-data:sql [options]", []);
+    return 0;
+  }
+
+  if (parsed.options.json) {
+    writeJson(stdout, {
+      sql: BASEBUDDY_POSTGRES_APP_STATE_SETUP_SQL.trim(),
+    });
+  } else {
+    writeLine(stdout, BASEBUDDY_POSTGRES_APP_STATE_SETUP_SQL.trim());
+  }
+
+  return 0;
+};
+
+const runAppDataMigrateCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "app-data:migrate", ["json"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+  const backend = getBaseBuddyAppStateBackend();
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy app-data:migrate [options]", []);
+    return 0;
+  }
+
+  if (backend === "basebuddy-data") {
+    const message = "No database migration is needed for basebuddy-data.";
+
+    if (parsed.options.json) {
+      writeJson(stdout, {
+        backend,
+        migrated: false,
+        message,
+      });
+    } else {
+      writeLine(stdout, message);
+      writeLine(stdout, `App data: ${getBaseBuddyCliAppDataLocation()}`);
+    }
+
+    return 0;
+  }
+
+  await ensurePostgresBaseBuddyAppStateSchema(
+    getBaseBuddyCliAppDataQueryClient(dependencies),
+  );
+
+  if (parsed.options.json) {
+    writeJson(stdout, {
+      backend,
+      location: getBaseBuddyCliAppDataLocation(),
+      migrated: true,
+    });
+  } else {
+    writeLine(stdout, "BaseBuddy app-data tables are ready.");
+    writeLine(stdout, `App data: ${getBaseBuddyCliAppDataLocation()}`);
+  }
+
+  return 0;
+};
+
+const runAppDataCheckCommand = async (
+  parsed: ParsedArguments,
+  dependencies: BaseBuddyCliDependencies,
+) => {
+  assertKnownOptions(parsed, "app-data:check", ["json"]);
+  const stdout = dependencies.stdout ?? defaultStdout;
+  const backend = getBaseBuddyAppStateBackend();
+
+  if (parsed.options.help) {
+    printSimpleHelp(stdout, "pnpm basebuddy app-data:check [options]", []);
+    return 0;
+  }
+
+  if (backend === "basebuddy-data") {
+    if (parsed.options.json) {
+      writeJson(stdout, {
+        backend,
+        ready: true,
+      });
+    } else {
+      writeLine(stdout, "No database app-data tables are needed for basebuddy-data.");
+      writeLine(stdout, `App data: ${getBaseBuddyCliAppDataLocation()}`);
+    }
+
+    return 0;
+  }
+
+  const ready = await checkBaseBuddyAppDataTables(
+    getBaseBuddyCliAppDataQueryClient(dependencies),
+  );
+
+  if (!ready) {
+    throw new Error(
+      "BaseBuddy app-data tables are missing. Run pnpm basebuddy app-data:migrate, or run pnpm basebuddy app-data:sql in your database SQL editor.",
+    );
+  }
+
+  if (parsed.options.json) {
+    writeJson(stdout, {
+      backend,
+      location: getBaseBuddyCliAppDataLocation(),
+      ready,
+    });
+  } else {
+    writeLine(stdout, "BaseBuddy app-data tables are ready.");
+    writeLine(stdout, `App data: ${getBaseBuddyCliAppDataLocation()}`);
   }
 
   return 0;
@@ -2590,6 +2749,12 @@ export const runBaseBuddyCli = async (
         return await runSetupCommand(parsed, dependencies);
       case "agent:setup":
         return await runAgentSetupCommand(parsed, dependencies);
+      case "app-data:sql":
+        return await runAppDataSqlCommand(parsed, dependencies);
+      case "app-data:migrate":
+        return await runAppDataMigrateCommand(parsed, dependencies);
+      case "app-data:check":
+        return await runAppDataCheckCommand(parsed, dependencies);
       case "users:list":
         return await runUsersListCommand(parsed, dependencies);
       case "user:create":

@@ -28,6 +28,7 @@ describe("basebuddy CLI", () => {
   const runCli = async (
     args: string[],
     options: {
+      appDataQueryClient?: Parameters<typeof runBaseBuddyCli>[1]["appDataQueryClient"];
       introspectContentSchema?: Parameters<typeof runBaseBuddyCli>[1]["introspectContentSchema"];
       queryDatabase?: (connectionString: string) => Promise<void>;
     } = {},
@@ -35,6 +36,7 @@ describe("basebuddy CLI", () => {
     let stdout = "";
     let stderr = "";
     const exitCode = await runBaseBuddyCli(args, {
+      appDataQueryClient: options.appDataQueryClient,
       introspectContentSchema: options.introspectContentSchema,
       now: () => fixedNow,
       queryDatabase: options.queryDatabase,
@@ -101,6 +103,9 @@ describe("basebuddy CLI", () => {
     expect(result.stdout).toContain("setup");
     expect(result.stdout).toContain("user:create");
     expect(result.stdout).toContain("projects:create");
+    expect(result.stdout).toContain("app-data:sql");
+    expect(result.stdout).toContain("app-data:migrate");
+    expect(result.stdout).toContain("app-data:check");
     expect(result.stdout).toContain("mapping:set");
   });
 
@@ -145,6 +150,90 @@ describe("basebuddy CLI", () => {
     expect(result.output).not.toContain("db-pass");
     expect(existsSync(join(tempDir, "basebuddy.config.json"))).toBe(false);
     expect(existsSync(join(tempDir, ".basebuddy"))).toBe(false);
+  });
+
+  it("prints BaseBuddy app-data SQL without touching config files", async () => {
+    const result = await runCli(["app-data:sql"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("create schema if not exists basebuddy");
+    expect(result.stdout).toContain("create table if not exists basebuddy.app_state");
+    expect(result.stdout).toContain("create table if not exists basebuddy.audit_events");
+    expect(result.stdout).not.toContain("postgresql://");
+    expect(existsSync(getBaseBuddyConfigPath())).toBe(false);
+  });
+
+  it("skips app-data migration for the basebuddy-data folder backend", async () => {
+    const query = vi.fn();
+
+    const result = await runCli(["app-data:migrate"], {
+      appDataQueryClient: () => ({ query }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("No database migration is needed for basebuddy-data.");
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("runs the app-data migration SQL for Supabase/Postgres backends", async () => {
+    vi.stubEnv("BASEBUDDY_APP_STATE_BACKEND", "supabase-split-project");
+    vi.stubEnv("BASEBUDDY_APP_STATE_DATABASE_URL", "postgresql://app-state:secret@example.com:5432/postgres");
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+
+    const result = await runCli(["app-data:migrate"], {
+      appDataQueryClient: () => ({ query }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("create schema if not exists basebuddy"));
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("create table if not exists basebuddy.app_state"));
+    expect(result.stdout).toContain("BaseBuddy app-data tables are ready.");
+    expect(result.stdout).toContain("supabase separate project: basebuddy.app_state");
+    expect(result.stdout).not.toContain("secret");
+  });
+
+  it("checks app-data tables for Supabase/Postgres backends", async () => {
+    vi.stubEnv("BASEBUDDY_APP_STATE_BACKEND", "supabase-same-project");
+    vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
+    const query = vi.fn().mockResolvedValueOnce({
+      rows: [
+        {
+          app_state: "basebuddy.app_state",
+          audit_events: "basebuddy.audit_events",
+        },
+      ],
+    });
+
+    const result = await runCli(["app-data:check"], {
+      appDataQueryClient: () => ({ query }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("to_regclass"));
+    expect(result.stdout).toContain("BaseBuddy app-data tables are ready.");
+    expect(result.stdout).toContain("supabase same project: basebuddy.app_state");
+    expect(result.stdout).not.toContain("db-pass");
+  });
+
+  it("fails app-data check when required tables are missing", async () => {
+    vi.stubEnv("BASEBUDDY_APP_STATE_BACKEND", "supabase-split-project");
+    vi.stubEnv("BASEBUDDY_APP_STATE_DATABASE_URL", "postgresql://app-state:secret@example.com:5432/postgres");
+    const query = vi.fn().mockResolvedValueOnce({
+      rows: [
+        {
+          app_state: null,
+          audit_events: "basebuddy.audit_events",
+        },
+      ],
+    });
+
+    const result = await runCli(["app-data:check"], {
+      appDataQueryClient: () => ({ query }),
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("BaseBuddy app-data tables are missing.");
+    expect(result.stderr).not.toContain("secret");
   });
 
   it("setup can create the first owner in the same BaseBuddy data config file and checks database reachability", async () => {
@@ -821,6 +910,8 @@ describe("basebuddy CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(body.workflow.map((step: { command: string }) => step.command)).toEqual([
       "pnpm basebuddy doctor",
+      "pnpm basebuddy app-data:migrate",
+      "pnpm basebuddy app-data:check",
       "pnpm basebuddy setup",
       "pnpm basebuddy projects:create",
       "pnpm basebuddy schema:inspect",

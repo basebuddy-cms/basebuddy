@@ -41,10 +41,11 @@ BaseBuddy intentionally renders `/onboarding` before app data exists. That lets 
 1. Open `/onboarding`.
 2. Complete **Choose where to store BaseBuddy data**.
 3. Complete **Connect to your database** by adding the required env values.
-4. Complete **Create account on BaseBuddy**.
-5. Let **Let's check the setup now** run automatically.
-6. Sign in with the owner account.
-7. Create a project and map your content tables.
+4. If you chose Supabase/Postgres app data, run **Prepare BaseBuddy data tables**.
+5. Complete **Create account on BaseBuddy**.
+6. Let **Let's check the setup now** run automatically.
+7. Sign in with the owner account.
+8. Create a project and map your content tables.
 
 ## Production Build
 
@@ -60,6 +61,7 @@ pnpm start
 ## Where To Go Next
 
 - [Configuration](./configuration.md)
+- [App Data Storage Options](./app-data-storage-options.md)
 - [Onboarding](./onboarding.md)
 - [Auth](./auth.md)
 - [Projects and mapping](./projects-and-mapping.md)

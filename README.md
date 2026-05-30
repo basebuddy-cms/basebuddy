@@ -102,7 +102,16 @@ Open:
 http://localhost:8080/onboarding
 ```
 
-Finish the three onboarding screens: connect the database with env values from `.env.example`, create the owner account, and let setup checks run. BaseBuddy creates the selected app-data backend, then you sign in and create your first project.
+Finish onboarding: choose where BaseBuddy stores app data, connect your database with env values from `.env.example`, prepare app-data tables if you chose Supabase/Postgres app data, create the owner account, and let setup checks run. BaseBuddy creates the selected app-data backend, then you sign in and create your first project.
+
+For Supabase/Postgres app data, the CLI setup step is:
+
+```sh
+pnpm basebuddy app-data:migrate
+pnpm basebuddy app-data:check
+```
+
+Those commands create and verify only `basebuddy.app_state` and `basebuddy.audit_events`.
 
 For production, use a restricted database role in `BASEBUDDY_CONTENT_DATABASE_URL`. BaseBuddy checks the role name during setup and marks mapped fields read-only when Postgres says the role cannot update their columns.
 
