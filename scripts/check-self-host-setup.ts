@@ -15,7 +15,7 @@ const printTextReport = ({
 }) => {
   console.log("BaseBuddy self-host setup check");
   console.log("");
-  console.log(`Config file: ${configPath}`);
+  console.log(`App data: ${configPath}`);
 
   for (const section of sections) {
     console.log("");

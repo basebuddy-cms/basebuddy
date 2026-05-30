@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { Pool } from "pg";
 
+import { getBaseBuddyPostgresSslConfig } from "../src/lib/basebuddy-config/database-ssl";
 import { loadBaseBuddyConfig } from "../src/lib/basebuddy-config/store";
 
 type Project = {
@@ -93,15 +94,9 @@ const getEnv = (key: string) => {
 };
 
 const createPool = (connectionString: string) => {
-  const parsed = new URL(connectionString);
-  const isLocal =
-    parsed.hostname === "127.0.0.1" ||
-    parsed.hostname === "localhost" ||
-    parsed.hostname === "::1";
-
   return new Pool({
     connectionString,
-    ssl: isLocal || /sslmode=disable/i.test(connectionString) ? false : { rejectUnauthorized: false },
+    ssl: getBaseBuddyPostgresSslConfig(connectionString),
   });
 };
 

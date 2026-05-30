@@ -70,6 +70,7 @@ type ProjectEditorDialogsProps = {
   handleGoBackFromTakeover: () => void;
   handleLostPostAccessAcknowledge: () => void;
   onConfirmSaveMapping: () => void;
+  onConfirmPostAction: () => Promise<void>;
   handleProceedWithoutSaving: () => Promise<void>;
   handleProjectSlugUnlockProceed: () => void;
   handleRestoreLostPostDraft: () => void;
@@ -83,6 +84,7 @@ type ProjectEditorDialogsProps = {
   isDeletingProject: boolean;
   isPostsCollection: boolean;
   isSaving: boolean;
+  isPublishing: boolean;
   isSavingProjectSettings: boolean;
   loadPostRevisions: (postId: string) => Promise<void>;
   loadingPostRevisions: boolean;
@@ -91,12 +93,14 @@ type ProjectEditorDialogsProps = {
   onPendingPostsDeleteChange: (value: PendingPostsDelete | null) => void;
   onPendingRevisionRestoreChange: (revision: ContentPostRevision | null) => void;
   onPendingTaxonomyDeleteChange: (value: PendingTaxonomyDelete | null) => void;
+  onPendingPostActionChange: (value: PendingPostActionConfirmation | null) => void;
   onPostsMappingDialogOpenChange: (open: boolean) => void;
   onProjectSlugUnlockDialogOpenChange: (open: boolean) => void;
   onRevisionSheetOpenChange: (open: boolean) => void;
   onShowDeleteProjectDialogChange: (open: boolean) => void;
   pendingLostPostDraftRestore: PendingLostPostDraftRestore | null;
   pendingPostTakeover: PendingPostTakeover | null;
+  pendingPostAction: PendingPostActionConfirmation | null;
   pendingPostsDelete: PendingPostsDelete | null;
   pendingRevisionRestore: ContentPostRevision | null;
   pendingStoredDraftRestore: PendingStoredDraftRestore | null;
@@ -118,6 +122,13 @@ type ProjectEditorDialogsProps = {
   onUnsavedChangesDialogOpenChange: (open: boolean) => void;
 };
 
+export type PendingPostActionConfirmation = {
+  confirmLabel: string;
+  description: string;
+  title: string;
+  type: "archive" | "publish" | "save" | "unpublish";
+};
+
 export function ProjectEditorDialogs({
   acquiringPostEditSession,
   canEditCurrentPost,
@@ -134,6 +145,7 @@ export function ProjectEditorDialogs({
   handleGoBackFromTakeover,
   handleLostPostAccessAcknowledge,
   onConfirmSaveMapping,
+  onConfirmPostAction,
   handleProceedWithoutSaving,
   handleProjectSlugUnlockProceed,
   handleRestoreLostPostDraft,
@@ -147,6 +159,7 @@ export function ProjectEditorDialogs({
   isDeletingProject,
   isPostsCollection,
   isSaving,
+  isPublishing,
   isSavingProjectSettings,
   loadPostRevisions,
   loadingPostRevisions,
@@ -155,12 +168,14 @@ export function ProjectEditorDialogs({
   onPendingPostsDeleteChange,
   onPendingRevisionRestoreChange,
   onPendingTaxonomyDeleteChange,
+  onPendingPostActionChange,
   onPostsMappingDialogOpenChange,
   onProjectSlugUnlockDialogOpenChange,
   onRevisionSheetOpenChange,
   onShowDeleteProjectDialogChange,
   pendingLostPostDraftRestore,
   pendingPostTakeover,
+  pendingPostAction,
   pendingPostsDelete,
   pendingRevisionRestore,
   pendingStoredDraftRestore,
@@ -183,6 +198,36 @@ export function ProjectEditorDialogs({
 }: ProjectEditorDialogsProps) {
   return (
     <>
+      <AlertDialog
+        open={Boolean(pendingPostAction)}
+        onOpenChange={(open) => {
+          if (!open && !isSaving && !isPublishing) {
+            onPendingPostActionChange(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingPostAction?.title ?? "Continue?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingPostAction?.description ?? "Confirm this change to continue."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving || isPublishing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving || isPublishing}
+              onClick={(event) => {
+                event.preventDefault();
+                void onConfirmPostAction();
+              }}
+            >
+              {pendingPostAction?.confirmLabel ?? "Continue"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Sheet
         open={showPostRevisionsSheet}
         onOpenChange={(open) => {

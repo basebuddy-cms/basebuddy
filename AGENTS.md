@@ -10,17 +10,17 @@ operate, or modify this repo.
 - Lets each project map an existing content schema into an editor.
 - Uses the saved mapping as the runtime source of truth.
 - Reads and writes user content through mapped storage targets.
-- Keeps setup state in a local config file, not in BaseBuddy-owned database tables.
+- Keeps setup state in one selected app-data backend: `basebuddy-data/` by default, or optional Supabase/Postgres app data.
 
 BaseBuddy is storage-first, not CMS-first. The database shape belongs to the user.
 
 ## Hard Rules
 
 - Do not rename, reshape, or migrate user content tables unless the user explicitly asks for database schema work.
-- Do not add BaseBuddy-owned setup migrations or setup SQL.
-- Do not store secrets in `basebuddy-data/basebuddy.config.json`.
+- Do not mutate user content schemas during setup.
+- Do not store secrets in BaseBuddy app data.
 - Do not commit `.env`, `.env.local`, `basebuddy-data/`, or audit logs.
-- Do not invent custom config paths. Use `process.cwd()/basebuddy-data/basebuddy.config.json`.
+- Do not invent custom config paths. The default local path is `process.cwd()/basebuddy-data/basebuddy.config.json`.
 - Normal save must write dirty mapped fields only.
 - Publish, unpublish, and archive must remain explicit actions.
 - Unsupported or unsafe mappings should become read-only or unsupported instead of being coerced.
@@ -28,13 +28,26 @@ BaseBuddy is storage-first, not CMS-first. The database shape belongs to the use
 
 ## Setup Model
 
-BaseBuddy app state lives here:
+BaseBuddy app state lives here by default:
 
 ```text
 process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
 The app and CLI create `basebuddy-data/` automatically. Users should not commit it.
+
+Optional app-data backends:
+
+```sh
+# Same Supabase/Postgres project as content.
+BASEBUDDY_APP_STATE_BACKEND=supabase-same-project
+
+# Separate Supabase/Postgres project.
+BASEBUDDY_APP_STATE_BACKEND=supabase-split-project
+BASEBUDDY_APP_STATE_DATABASE_URL=
+```
+
+Those DB-backed options use the BaseBuddy-owned `basebuddy.app_state` and `basebuddy.audit_events` tables. Use CLI/UI commands instead of editing rows directly.
 
 Audit events live here:
 
@@ -48,6 +61,8 @@ Secrets and deployment credentials belong in env:
 BASEBUDDY_AUTH_SECRET=
 BASEBUDDY_CONTENT_DATABASE_URL=
 ```
+
+Use a restricted database role for `BASEBUDDY_CONTENT_DATABASE_URL` in production. BaseBuddy marks mapped fields read-only when Postgres says that role cannot update their columns.
 
 Optional media/file storage env values:
 
@@ -67,17 +82,12 @@ BASEBUDDY_S3_SECRET_ACCESS_KEY=
 1. Install dependencies with `pnpm install`.
 2. Copy `.env.example` to `.env` or set equivalent production env values.
 3. Set `BASEBUDDY_AUTH_SECRET` and `BASEBUDDY_CONTENT_DATABASE_URL`.
-4. Run `pnpm basebuddy agent:setup --json` to get the recommended CLI order.
-5. Run `pnpm basebuddy doctor --json`.
-6. Create setup with onboarding UI or `pnpm basebuddy setup`.
-7. Create the project with `pnpm basebuddy projects:create`.
-8. Inspect the live schema with `pnpm basebuddy schema:inspect --schema public --json`.
-9. Draft mapping JSON with `pnpm basebuddy mapping:draft --schema public --table <table> --json`.
-10. Explain the mapping with `pnpm basebuddy mapping:explain --input mapping.json --json`.
-11. Save only verified mapping with `pnpm basebuddy mapping:set`.
-12. Start the app with `pnpm start` after build, or the repo's documented development command while developing.
+4. Run `pnpm basebuddy doctor`.
+5. Create setup with onboarding UI or `pnpm basebuddy setup`.
+6. Start the app with `pnpm start` after build, or the repo's documented development command while developing.
+7. Create projects, users, permissions, mappings, sidebar layout, and storage metadata through the UI or CLI.
 
-Prefer CLI commands over hand-editing `basebuddy-data/basebuddy.config.json`. Source-code digging should not be needed for normal user setup.
+Prefer CLI commands over hand-editing files or app-data rows.
 
 ## CLI Commands
 
@@ -130,11 +140,6 @@ pnpm basebuddy permissions:set --project docs --actor-email owner@example.com --
 Mapping, sidebar, and storage:
 
 ```sh
-pnpm basebuddy schema:inspect --schema public --json
-pnpm basebuddy schema:inspect --schema public --table posts,authors,categories --json
-pnpm basebuddy mapping:draft --schema public --table posts --json
-pnpm basebuddy mapping:draft --schema public --table pages --hints mapping-hints.json --json
-pnpm basebuddy mapping:explain --input mapping.json --json
 pnpm basebuddy mapping:get --project docs --json
 pnpm basebuddy mapping:validate --input mapping.json --json
 pnpm basebuddy mapping:set --project docs --input mapping.json --binding-status ready --json
@@ -148,7 +153,8 @@ pnpm basebuddy storage:get --project docs --library media --json
 pnpm basebuddy storage:set --project docs --library media --provider supabase_bucket --bucket media
 ```
 
-The CLI does not edit content rows, upload files, delete storage objects, publish/unpublish/archive content, or manage deployment env values.
+The CLI does not edit content rows, upload files, delete storage objects, run mapping
+auto-detection, publish/unpublish/archive content, or manage deployment env values.
 
 ## Runtime Model
 
@@ -189,7 +195,6 @@ For UI changes, also run the relevant browser or Playwright checks from `docs/te
 
 - Install and setup: `README.md`, `INSTALL.md`, `docs/getting-started.md`, `docs/onboarding.md`
 - Config and env: `docs/configuration.md`
-- Agent setup: `docs/agent-cli-setup.md`
 - CLI: `docs/cli.md`
 - Projects and mapping: `docs/projects-and-mapping.md`
 - Storage/UI rules: `docs/storage-ui-matrix.md`

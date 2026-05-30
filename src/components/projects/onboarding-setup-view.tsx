@@ -34,6 +34,7 @@ type SetupFormState = {
 };
 
 type SetupStepId = "database" | "account" | "checks";
+type AppStateChoice = "basebuddy-data" | "supabase-same-project" | "supabase-split-project";
 type TimelineStatus = BaseBuddyConfigSetupCheckStatus | "checking" | "pending";
 
 type TimelineItem = {
@@ -285,7 +286,7 @@ function EnvKeysBlock({
   label: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const value = keys.map((key) => `${key}=`).join("\n");
+  const value = keys.map((key) => (key.includes("=") ? key : `${key}=`)).join("\n");
 
   const handleCopy = async () => {
     const ok = await copyText(value);
@@ -306,8 +307,18 @@ function EnvKeysBlock({
         <code>
           {keys.map((key) => (
             <span key={key} className="block whitespace-nowrap">
-              <span className="text-primary">{key}</span>
-              <span className="text-muted-foreground">=</span>
+              {key.includes("=") ? (
+                <>
+                  <span className="text-primary">{key.split("=")[0]}</span>
+                  <span className="text-muted-foreground">=</span>
+                  <span className="text-foreground">{key.split("=").slice(1).join("=")}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-primary">{key}</span>
+                  <span className="text-muted-foreground">=</span>
+                </>
+              )}
             </span>
           ))}
         </code>
@@ -445,6 +456,7 @@ export function OnboardingSetupView({
     status ?? fallbackSetupStatus,
   );
   const [activeStep, setActiveStep] = useState<SetupStepId>(readOnly ? "checks" : "database");
+  const [appStateChoice, setAppStateChoice] = useState<AppStateChoice>("basebuddy-data");
   const [envConfirmed, setEnvConfirmed] = useState(false);
   const [formState, setFormState] = useState<SetupFormState>(initialFormState);
   const [createdEmail, setCreatedEmail] = useState<string | null>(null);
@@ -467,7 +479,17 @@ export function OnboardingSetupView({
   const signInHref = createdEmail
     ? `/login?email=${encodeURIComponent(createdEmail)}`
     : "/login";
+  const appStateEnvKeys =
+    appStateChoice === "basebuddy-data"
+      ? []
+      : appStateChoice === "supabase-same-project"
+        ? ["BASEBUDDY_APP_STATE_BACKEND=supabase-same-project"]
+        : [
+            "BASEBUDDY_APP_STATE_BACKEND=supabase-split-project",
+            "BASEBUDDY_APP_STATE_DATABASE_URL",
+          ];
   const requiredEnvKeys = [
+    ...appStateEnvKeys,
     "BASEBUDDY_AUTH_SECRET",
     "BASEBUDDY_CONTENT_DATABASE_URL",
   ];
@@ -723,6 +745,43 @@ export function OnboardingSetupView({
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
           Add storage keys only if you want images or files in BaseBuddy.
         </p>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3">
+        {[
+          {
+            description: "Simple single-server setup.",
+            id: "basebuddy-data" as const,
+            label: "BaseBuddy data folder",
+          },
+          {
+            description: "Store app data beside your content.",
+            id: "supabase-same-project" as const,
+            label: "Same Supabase project",
+          },
+          {
+            description: "Use a separate Supabase project.",
+            id: "supabase-split-project" as const,
+            label: "Separate Supabase project",
+          },
+        ].map((choice) => (
+          <button
+            key={choice.id}
+            type="button"
+            className={cn(
+              "rounded-md border px-3 py-2 text-left transition-colors",
+              appStateChoice === choice.id
+                ? "border-primary bg-primary/5"
+                : "border-border bg-background hover:bg-secondary/40",
+            )}
+            onClick={() => setAppStateChoice(choice.id)}
+          >
+            <span className="block text-xs font-medium text-foreground">{choice.label}</span>
+            <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">
+              {choice.description}
+            </span>
+          </button>
+        ))}
       </div>
 
       <EnvKeysBlock label=".env" keys={requiredEnvKeys} />

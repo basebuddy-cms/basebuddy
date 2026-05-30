@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { readBaseBuddyRuntimeEnv } from "./env";
 import { getBaseBuddyDataDirectoryPath } from "./paths";
+import {
+  appendPostgresBaseBuddyAuditEvent,
+  type PostgresBaseBuddyAuditEvent,
+} from "./postgres-app-state-store";
+import { getPostgresAppStateQueryClient } from "./store";
 
 export const BASEBUDDY_AUDIT_LOG_FILENAME = "basebuddy.audit.jsonl";
 
@@ -51,6 +57,13 @@ export const appendBaseBuddyAuditEvent = async ({
     type,
     userAgent: normalizeOptionalString(userAgent),
   };
+
+  if (readBaseBuddyRuntimeEnv().appStateBackend !== "basebuddy-data") {
+    return appendPostgresBaseBuddyAuditEvent(
+      getPostgresAppStateQueryClient(),
+      event satisfies PostgresBaseBuddyAuditEvent,
+    );
+  }
 
   const auditLogPath = getBaseBuddyAuditLogPath();
 

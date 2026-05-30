@@ -94,6 +94,22 @@ describe("BaseBuddy config setup status", () => {
     );
   });
 
+  it("reports a missing separate Supabase app-data database without creating local config paths", async () => {
+    vi.stubEnv("BASEBUDDY_APP_STATE_BACKEND", "supabase-split-project");
+    vi.stubEnv("BASEBUDDY_AUTH_SECRET", authSecret);
+    vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
+
+    const status = await getBaseBuddyConfigSetupStatus();
+    const configSection = status.sections.find((section) => section.title === "BaseBuddy app data");
+
+    expect(isBaseBuddyConfigSetupReady(status)).toBe(false);
+    expect(status.topology).toBe("supabase-split-project");
+    expect(status.configPath).toBe("supabase separate project: basebuddy.app_state");
+    expect(configSection?.status).toBe("missing");
+    expect(JSON.stringify(status)).toContain("BASEBUDDY_APP_STATE_DATABASE_URL");
+    expect(JSON.stringify(status)).not.toContain(join(process.cwd(), "basebuddy-data"));
+  });
+
   it("marks setup ready when the config has an owner and env has auth/database credentials", async () => {
     vi.stubEnv("BASEBUDDY_AUTH_SECRET", authSecret);
     vi.stubEnv("BASEBUDDY_CONTENT_DATABASE_URL", databaseUrl);
@@ -136,6 +152,27 @@ describe("BaseBuddy config setup status", () => {
     expect(serialized).not.toContain("owner-password-hash");
     expect(serialized).not.toContain("owner-password-salt");
     expect(serialized).toContain("set:");
+  });
+
+  it("recommends a restricted database role instead of the broad postgres owner", async () => {
+    vi.stubEnv("BASEBUDDY_AUTH_SECRET", authSecret);
+    vi.stubEnv(
+      "BASEBUDDY_CONTENT_DATABASE_URL",
+      "postgresql://postgres:db-pass@example.com:5432/postgres",
+    );
+
+    await ensureBaseBuddyConfig({
+      now: fixedNow,
+    });
+    const status = await getBaseBuddyConfigSetupStatus();
+    const roleSection = status.sections.find((section) => section.title === "Database role");
+
+    expect(roleSection?.status).toBe("invalid");
+    expect(roleSection?.checks[0]).toMatchObject({
+      required: false,
+      status: "invalid",
+    });
+    expect(roleSection?.checks[0]?.value).toContain("restricted database role");
   });
 
   it("reads setup env values from .env.local in the current working directory", async () => {

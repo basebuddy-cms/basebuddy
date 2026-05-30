@@ -9,7 +9,7 @@ Start with [Getting Started](./getting-started.md), then [Onboarding](./onboardi
 ```mermaid
 flowchart TD
   Start["New install"] --> Install["Install and run"]
-  Install --> Setup["Create basebuddy-data/basebuddy.config.json"]
+  Install --> Setup["Create BaseBuddy app data"]
   Setup --> Login["Sign in"]
   Login --> Project["Create project"]
   Project --> Mapping["Save mapping"]
@@ -38,7 +38,7 @@ Use CLI output and the live schema before reading source files. Direct config ed
 ## Core Guarantees
 
 - BaseBuddy edits existing schemas through a saved mapping.
-- App state lives in `process.cwd()/basebuddy-data/basebuddy.config.json`.
+- App state lives in the selected app-data backend. The default is `process.cwd()/basebuddy-data/basebuddy.config.json`.
 - Normal save writes dirty mapped fields only.
 - Publish, unpublish, and archive are explicit actions.
 - Unsupported shapes become read-only or unsupported.

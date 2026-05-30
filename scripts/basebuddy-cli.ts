@@ -655,7 +655,7 @@ const getAgentSetupWorkflow = () => [
   },
   {
     command: "pnpm basebuddy setup",
-    purpose: "Create basebuddy-data/basebuddy.config.json after env is ready.",
+    purpose: "Create BaseBuddy app data after env is ready.",
   },
   {
     command: "pnpm basebuddy projects:create",
@@ -1077,7 +1077,7 @@ const printMainHelp = (write: (chunk: string) => void) => {
   writeLine(write);
   writeLine(write, "Commands:");
   writeLine(write, "  doctor          Check BaseBuddy setup readiness.");
-  writeLine(write, "  setup           Create basebuddy-data/basebuddy.config.json after env is configured.");
+  writeLine(write, "  setup           Create BaseBuddy app data after env is configured.");
   writeLine(write, "  agent:setup     Print the recommended agent-first CLI setup workflow.");
   writeLine(write, "  users:list      List local config-backed users.");
   writeLine(write, "  user:create     Create a local config-backed user.");
@@ -1142,6 +1142,10 @@ const printSetupHelp = (write: (chunk: string) => void) => {
   writeLine(write, "  BASEBUDDY_AUTH_SECRET                  Local session signing secret.");
   writeLine(write, "  BASEBUDDY_CONTENT_DATABASE_URL         Postgres database URL.");
   writeLine(write);
+  writeLine(write, "Optional app data env:");
+  writeLine(write, "  BASEBUDDY_APP_STATE_BACKEND            basebuddy-data, supabase-same-project, or supabase-split-project.");
+  writeLine(write, "  BASEBUDDY_APP_STATE_DATABASE_URL       Required only for supabase-split-project.");
+  writeLine(write);
   writeLine(write, "Optional env:");
   writeLine(write, "  BASEBUDDY_SUPABASE_URL              Only needed for images and files.");
   writeLine(write, "  BASEBUDDY_SUPABASE_PUBLISHABLE_KEY  Only needed for images and files.");
@@ -1203,7 +1207,7 @@ const printTextSetupStatus = ({
 }) => {
   writeLine(write, heading);
   writeLine(write);
-  writeLine(write, `Config file: ${status.configPath}`);
+  writeLine(write, `App data: ${status.configPath}`);
   writeLine(write, `Ready: ${ready ? "yes" : "no"}`);
   printStatusSections(write, status.sections);
 };
@@ -1302,7 +1306,7 @@ const runSetupCommand = async (
     writeLine(stdout, "BaseBuddy setup");
     writeLine(stdout);
     writeLine(stdout, `Action: ${action}`);
-    writeLine(stdout, `Config file: ${getBaseBuddyConfigPath()}`);
+    writeLine(stdout, `App data: ${status.configPath}`);
     writeLine(stdout, `Ready: ${ready ? "yes" : "no"}`);
     printStatusSections(stdout, status.sections);
   }
@@ -1356,7 +1360,7 @@ const runUserCreateCommand = async (
   } else {
     writeLine(stdout, "BaseBuddy user created");
     writeLine(stdout);
-    writeLine(stdout, `Config file: ${getBaseBuddyConfigPath()}`);
+    writeLine(stdout, `App data: ${getBaseBuddyConfigPath()}`);
     writeLine(stdout, `User: ${createdUser?.email ?? email}`);
     writeLine(stdout, "Password: stored securely");
   }

@@ -117,7 +117,7 @@ describe("user-facing error messages", () => {
         new Error("Missing BaseBuddy data config file: basebuddy-data/basebuddy.config.json"),
         "Could not complete setup checks right now.",
       ),
-    ).toBe("Open onboarding or run the BaseBuddy CLI setup command to create basebuddy-data/basebuddy.config.json.");
+    ).toBe("Open onboarding or run the BaseBuddy CLI setup command to create BaseBuddy app data.");
 
     expect(
       getSetupOwnerErrorMessage(

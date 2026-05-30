@@ -7,7 +7,7 @@ This page gets BaseBuddy running locally and points you to the first setup scree
 - Node.js 22 recommended.
 - `pnpm@10.32.1`.
 - A Postgres/Supabase database that contains content you want to edit.
-- A writable app working directory where BaseBuddy can create `basebuddy-data/`.
+- Writable app-data storage. The default backend creates `basebuddy-data/`; Supabase/Postgres app-data mode uses BaseBuddy-owned tables.
 
 ## Install
 
@@ -34,7 +34,7 @@ Open:
 http://localhost:8080/onboarding
 ```
 
-BaseBuddy intentionally renders `/onboarding` before `basebuddy-data/basebuddy.config.json` exists. That lets the app create setup from the UI instead of requiring manual file edits first.
+BaseBuddy intentionally renders `/onboarding` before app data exists. That lets the app create setup from the UI instead of requiring manual file edits first.
 
 ## First-Run Flow
 

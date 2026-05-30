@@ -572,6 +572,17 @@ describe("Postgres adapter foundation helpers", () => {
       message: 'Choose one of the allowed values instead of "archived".',
       ok: false,
     });
+
+    expect(
+      coerceContentAdapterValue({
+        value: ["not", "an", "object"],
+        valueKind: "json_object",
+      }),
+    ).toEqual({
+      code: "invalid_json_object",
+      message: "Enter a valid JSON object.",
+      ok: false,
+    });
   });
 
   it("normalizes relation options and falls back when labels are missing", () => {
@@ -937,6 +948,28 @@ describe("Postgres adapter foundation helpers", () => {
         constraint: "posts_audience_check",
         detail: 'Failing row contains (audience=admins).',
         postgresCode: "23514",
+      },
+    });
+
+    expect(
+      mapContentProviderErrorToAdapterError(
+        {
+          code: "42501",
+          column: "body",
+          message: "permission denied for table posts",
+        },
+        {
+          fieldKeyByColumn: {
+            body: "content",
+          },
+        },
+      ),
+    ).toEqual({
+      code: "database_write_privilege_denied",
+      fieldKey: "content",
+      message: "The database connection cannot update this field.",
+      metadata: {
+        postgresCode: "42501",
       },
     });
 

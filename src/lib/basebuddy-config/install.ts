@@ -1,6 +1,10 @@
 import "server-only";
 
 import {
+  type BaseBuddyPostgresSslConfig,
+  getBaseBuddyPostgresSslConfig,
+} from "./database-ssl";
+import {
   getBaseBuddyContentRuntimeEnv,
   getBaseBuddyContentStorageServiceKey,
   getBaseBuddyS3CompatibleStorageCredentialStatus,
@@ -18,11 +22,7 @@ export type ConfigS3CompatibleStorageCredentials = {
   secretAccessKey: string;
 };
 
-export type ConfigContentDatabaseSslConfig =
-  | false
-  | {
-      rejectUnauthorized: false;
-    };
+export type ConfigContentDatabaseSslConfig = BaseBuddyPostgresSslConfig;
 
 export const getConfigContentRuntimeContext =
   async (): Promise<ConfigContentRuntimeContext> => getBaseBuddyContentRuntimeEnv();
@@ -41,18 +41,4 @@ export const getConfigS3CompatibleStorageCredentialStatus = async () => {
 
 export const getConfigContentDatabaseSslConfig = (
   connectionString: string,
-): ConfigContentDatabaseSslConfig => {
-  try {
-    const databaseUrl = new URL(connectionString);
-
-    if (databaseUrl.searchParams.get("sslmode")?.toLowerCase() === "disable") {
-      return false;
-    }
-  } catch {
-    // URL validation is reported by setup/runtime callers; default to TLS.
-  }
-
-  return {
-    rejectUnauthorized: false,
-  };
-};
+): ConfigContentDatabaseSslConfig => getBaseBuddyPostgresSslConfig(connectionString);

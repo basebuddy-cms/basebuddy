@@ -97,7 +97,7 @@ pnpm basebuddy mapping:get --project docs --json
 ## Rules For Agents
 
 - Prefer CLI output and live schema inspection before reading source files.
-- Do not hand-edit `basebuddy-data/basebuddy.config.json` unless the CLI cannot load it and you are repairing the file.
+- Do not hand-edit app data unless the CLI cannot load it and you are repairing the default local file.
 - Do not put database URLs, auth secrets, Supabase keys, S3 keys, or passwords into mapping files, config files, docs, screenshots, commits, or final answers.
 - Remember that `mapping:set` does not rename tables, add columns, or change user content schemas.
 

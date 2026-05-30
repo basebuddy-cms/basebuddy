@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  BASEBUDDY_APP_STATE_BACKEND_ENV,
+  BASEBUDDY_APP_STATE_DATABASE_URL_ENV,
+  getBaseBuddyAppStateBackend,
+  getBaseBuddyAppStateDatabaseUrl,
+  type BaseBuddyAppStateBackend,
+} from "./app-state-backend";
 
 export const BASEBUDDY_AUTH_SECRET_ENV = "BASEBUDDY_AUTH_SECRET";
 export const BASEBUDDY_CONTENT_DATABASE_URL_ENV = "BASEBUDDY_CONTENT_DATABASE_URL";
@@ -12,6 +19,8 @@ export const BASEBUDDY_S3_ACCESS_KEY_ID_ENV = "BASEBUDDY_S3_ACCESS_KEY_ID";
 export const BASEBUDDY_S3_SECRET_ACCESS_KEY_ENV = "BASEBUDDY_S3_SECRET_ACCESS_KEY";
 
 const BASEBUDDY_RUNTIME_ENV_KEYS = [
+  BASEBUDDY_APP_STATE_BACKEND_ENV,
+  BASEBUDDY_APP_STATE_DATABASE_URL_ENV,
   BASEBUDDY_AUTH_SECRET_ENV,
   BASEBUDDY_CONTENT_DATABASE_URL_ENV,
   BASEBUDDY_SUPABASE_URL_ENV,
@@ -25,6 +34,8 @@ const BASEBUDDY_ENV_FILE_NAMES = [".env", ".env.local"] as const;
 type BaseBuddyEnvValues = Record<string, string | undefined>;
 
 export type BaseBuddyRuntimeEnv = {
+  appStateBackend: BaseBuddyAppStateBackend;
+  appStateDatabaseUrl: string | null;
   authSecret: string | null;
   contentDatabaseUrl: string | null;
   contentSupabasePublishableKey: string | null;
@@ -123,6 +134,8 @@ export const readBaseBuddyRuntimeEnv = (
   const runtimeEnv = resolveBaseBuddyRuntimeEnv(env);
 
   return {
+    appStateBackend: getBaseBuddyAppStateBackend(runtimeEnv),
+    appStateDatabaseUrl: getBaseBuddyAppStateDatabaseUrl(runtimeEnv),
     authSecret: normalizeEnvValue(runtimeEnv[BASEBUDDY_AUTH_SECRET_ENV]),
     contentDatabaseUrl: normalizeEnvValue(runtimeEnv[BASEBUDDY_CONTENT_DATABASE_URL_ENV]),
     contentSupabasePublishableKey: normalizeEnvValue(

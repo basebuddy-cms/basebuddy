@@ -576,6 +576,7 @@ export type ContentFieldSpecSummary = {
   nullable: boolean;
   patchMode: ContentFieldSpecPatchMode;
   readOnly: boolean;
+  readOnlyReason?: "database_privilege" | "mapping" | "unsupported";
   redirectMetadataSupport?: ContentRedirectMetadataSupport;
   relationMode: ContentFieldSpecRelationMode;
   relationTargetEntity?: ContentMappingEntityKey | null;

@@ -41,6 +41,7 @@ import {
   contentCollections,
   type ContentCollection,
   type ContentCollectionCounts,
+  type ContentFieldSpecSummary,
   type ContentWorkspaceMeta,
 } from "./shared";
 import {
@@ -55,6 +56,10 @@ import {
   createContentRuntimeAdapter,
   getRequiredContentRuntimeAdapterMethod,
 } from "./adapter/factory";
+import {
+  getContentCustomFieldKey,
+  type ContentMappedField,
+} from "./mapping";
 import {
   buildContentNonImageStorageObjectCountQuery,
   buildContentStorageObjectCountQuery,
@@ -595,6 +600,98 @@ const getBootstrapContentWorkspaceSummary = async ({
   });
 };
 
+const getMappedFieldColumn = (field: Pick<ContentMappedField, "column" | "sourceRelation">) =>
+  field.sourceRelation?.sourceColumn ?? field.column ?? null;
+
+const getPostFieldColumnsByFieldKey = (mapping: Awaited<ReturnType<WorkspaceDependencies["getReadyContentProjectMapping"]>>) => {
+  const posts = mapping?.mappingConfig.entities.posts;
+  const columnsByFieldKey = new Map<string, string>();
+
+  if (!posts) {
+    return columnsByFieldKey;
+  }
+
+  for (const [fieldKey, field] of Object.entries(posts.fields)) {
+    const column = getMappedFieldColumn(field);
+
+    if (column) {
+      columnsByFieldKey.set(fieldKey, column);
+    }
+  }
+
+  for (const field of posts.editorFields ?? []) {
+    if (field.visible && field.column) {
+      columnsByFieldKey.set(field.id, field.column);
+    }
+  }
+
+  for (const field of posts.customFields ?? []) {
+    if (field.enabled && field.column) {
+      columnsByFieldKey.set(getContentCustomFieldKey(field), field.column);
+    }
+  }
+
+  return columnsByFieldKey;
+};
+
+export const applyPostgresColumnPrivilegesToFieldSpecs = async ({
+  client,
+  fieldSpecs,
+  mapping,
+}: {
+  client: ContentDatabaseClient;
+  fieldSpecs: ContentFieldSpecSummary[];
+  mapping: NonNullable<Awaited<ReturnType<WorkspaceDependencies["getReadyContentProjectMapping"]>>>;
+}) => {
+  const posts = mapping.mappingConfig.entities.posts;
+
+  if (!posts.source.schema || !posts.source.table || posts.source.kind !== "table") {
+    return fieldSpecs;
+  }
+
+  const columnsByFieldKey = getPostFieldColumnsByFieldKey(mapping);
+  const sourceColumns = Array.from(new Set(Array.from(columnsByFieldKey.values())));
+
+  if (!sourceColumns.length) {
+    return fieldSpecs;
+  }
+
+  const result = await client.query<{
+    can_update: boolean | null;
+    column_name: string;
+  }>(
+    `
+      select
+        column_name,
+        has_column_privilege(format('%I.%I', $1::text, $2::text), column_name, 'UPDATE') as can_update
+      from unnest($3::text[]) as column_name
+    `,
+    [posts.source.schema, posts.source.table, sourceColumns],
+  );
+  const canUpdateByColumn = new Map(
+    result.rows.map((row) => [row.column_name, row.can_update === true] as const),
+  );
+
+  return fieldSpecs.map((fieldSpec) => {
+    if (fieldSpec.readOnly) {
+      return fieldSpec;
+    }
+
+    const column = columnsByFieldKey.get(fieldSpec.fieldKey);
+
+    if (!column || canUpdateByColumn.get(column) !== false) {
+      return fieldSpec;
+    }
+
+    return {
+      ...fieldSpec,
+      editabilityState: "read_only" as const,
+      readOnly: true,
+      readOnlyReason: "database_privilege" as const,
+    };
+  });
+};
+
 export const getContentWorkspaceMetaForMappedContent = async ({
   context,
   dependencies,
@@ -708,6 +805,18 @@ export const getContentWorkspaceMetaForMappedContent = async ({
   }
 
   const contentRuntimeSummary = await runtimeAdapter.loadWorkspace();
+  const fieldSpecsResult = await Promise.resolve(
+    dependencies.withContentDatabaseClient(context.connectionString, (client) =>
+      applyPostgresColumnPrivilegesToFieldSpecs({
+        client,
+        fieldSpecs: contentRuntimeSummary.fieldSpecs,
+        mapping: readyMapping,
+      }),
+    ),
+  ).catch(() => contentRuntimeSummary.fieldSpecs);
+  const fieldSpecs = Array.isArray(fieldSpecsResult)
+    ? fieldSpecsResult
+    : contentRuntimeSummary.fieldSpecs;
 
   return {
     capabilities,
@@ -717,6 +826,7 @@ export const getContentWorkspaceMetaForMappedContent = async ({
 
       return {
         ...contentRuntimeSummary,
+        fieldSpecs,
         filesStorage: contentRuntimeSummary.filesStorage
           ? {
               ...contentRuntimeSummary.filesStorage,

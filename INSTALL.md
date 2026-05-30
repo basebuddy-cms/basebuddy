@@ -1,12 +1,17 @@
 # BaseBuddy Install Guide
 
-BaseBuddy is a self-hosted editor for existing Postgres/Supabase schemas. Fresh installs store BaseBuddy app state in one local data folder:
+BaseBuddy is a self-hosted editor for existing Postgres/Supabase schemas. Fresh installs store BaseBuddy app state in one local data folder by default:
 
 ```text
 process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
 The setup UI and CLI create that folder and file for you. Do not commit `basebuddy-data/`.
+
+You can also store BaseBuddy app data in Supabase/Postgres:
+
+- `BASEBUDDY_APP_STATE_BACKEND=supabase-same-project` stores app data in the same database as your content, inside the BaseBuddy-owned `basebuddy` schema.
+- `BASEBUDDY_APP_STATE_BACKEND=supabase-split-project` plus `BASEBUDDY_APP_STATE_DATABASE_URL` stores app data in a separate database.
 
 ## Prerequisites
 
@@ -46,6 +51,13 @@ BASEBUDDY_AUTH_SECRET=
 BASEBUDDY_CONTENT_DATABASE_URL=
 ```
 
+Optional app-data backend:
+
+```sh
+BASEBUDDY_APP_STATE_BACKEND=
+BASEBUDDY_APP_STATE_DATABASE_URL=
+```
+
 Only needed if you want images or files in BaseBuddy:
 
 ```sh
@@ -59,7 +71,9 @@ BASEBUDDY_S3_ACCESS_KEY_ID=your-s3-access-key
 BASEBUDDY_S3_SECRET_ACCESS_KEY=your-s3-secret-key
 ```
 
-For local Supabase content databases, add `?sslmode=disable` to the database URL. For hosted Supabase, prefer the direct database connection when your host supports IPv6; otherwise use the Supabase Session Pooler connection string.
+For local Supabase content databases, add `?sslmode=disable` to the database URL. For hosted Supabase, use TLS verification. Do not use `sslmode=no-verify`; if your environment needs a custom CA, add `sslmode=verify-full&sslrootcert=/absolute/path/to/root.crt`.
+
+For production, use a restricted database role instead of the broad `postgres` owner. Start from [`docs/sql/restricted-content-role.sql`](./docs/sql/restricted-content-role.sql), then grant only the tables and columns editors should use.
 
 ## 3. Create The Owner Account
 
@@ -71,7 +85,7 @@ On `/onboarding`, complete **Connect to the database**, then enter:
 
 Click `Create setup`. BaseBuddy writes `basebuddy-data/basebuddy.config.json` and hashes the owner password. It does not write database URLs or service keys into the config file.
 
-The next screen runs setup checks automatically. It verifies the env values, owner account, config-file state, and database connection before showing **Open BaseBuddy**.
+The next screen runs setup checks automatically. It verifies the env values, owner account, app-data state, database role, and database connection before showing **Open BaseBuddy**.
 
 BaseBuddy also writes sign-in and local user audit events to `basebuddy-data/basebuddy.audit.jsonl`. Do not commit `basebuddy-data/`.
 
@@ -143,15 +157,16 @@ Before exposing BaseBuddy publicly:
 
 - run `pnpm basebuddy doctor`;
 - confirm required secrets are set in env, not in the repo;
-- confirm `basebuddy-data/basebuddy.config.json` is present on the server and `basebuddy-data/` is ignored by git;
-- confirm the server has persistent writable storage for `basebuddy-data/`;
+- confirm your chosen app-data backend is ready;
+- if you use `basebuddy-data`, confirm `basebuddy-data/basebuddy.config.json` is present on the server and `basebuddy-data/` is ignored by git;
+- if you use `basebuddy-data`, confirm the server has persistent writable storage for it;
 - place the app behind HTTPS;
 - set request body limits that match your upload policy;
 - use a shared upstream rate limiter if you run multiple app instances.
 
 Production responses include HSTS. Confirm HTTPS is working for the final domain before exposing the app to real users.
 
-BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys unless you provide durable writable storage for `basebuddy-data/`. UI changes to projects, mappings, permissions, and sidebar layout write to `basebuddy-data/basebuddy.config.json` on the running server.
+BaseBuddy is not currently designed for editable Vercel/Netlify-style serverless deploys with the default `basebuddy-data` backend unless you provide durable writable storage. Use the Supabase/Postgres app-data backend when the app may restart or scale across instances.
 
 ## Next Steps
 

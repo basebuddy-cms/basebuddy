@@ -278,6 +278,10 @@ export const getContentAdapterOperationErrorStatus = (
   errors: ContentAdapterError[],
 ) =>
   errors.some(
+    (error) => error.code === "database_write_privilege_denied",
+  )
+    ? 403
+    : errors.some(
     (error) =>
       error.code === "helper_row_ambiguity" ||
       error.code === "uniqueness_violation" ||
@@ -340,6 +344,15 @@ export const mapContentProviderErrorToAdapterError = (
   });
 
   switch (postgresError.code) {
+    case "42501":
+      return buildMappedError({
+        ...postgresError,
+        fieldKey,
+        normalizedCode: "database_write_privilege_denied",
+        normalizedMessage: fieldKey
+          ? "The database connection cannot update this field."
+          : "The database connection does not have permission to make this change.",
+      });
     case "23505":
       return buildMappedError({
         ...postgresError,

@@ -132,7 +132,7 @@ const SETUP_OWNER_MESSAGE_REPLACEMENTS: Array<{
 }> = [
   {
     pattern: /Missing BaseBuddy data config file|basebuddy\.config\.json/i,
-    replacement: "Open onboarding or run the BaseBuddy CLI setup command to create basebuddy-data/basebuddy.config.json.",
+    replacement: "Open onboarding or run the BaseBuddy CLI setup command to create BaseBuddy app data.",
   },
   {
     pattern: /Missing required environment variable:?\s*([A-Z0-9_]+)/i,

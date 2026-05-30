@@ -1,6 +1,6 @@
 # Auth
 
-BaseBuddy uses local email/password users stored in `basebuddy-data/basebuddy.config.json`.
+BaseBuddy uses local email/password users stored in the selected BaseBuddy app-data backend. By default that is `basebuddy-data/basebuddy.config.json`; Supabase/Postgres app-data installs store the same user records in BaseBuddy-owned app-data tables.
 
 The first owner is created from onboarding or `pnpm basebuddy setup`. Sign-in creates a signed HttpOnly session cookie. Raw session tokens are not written to the browser or logs.
 

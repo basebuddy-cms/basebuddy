@@ -1,8 +1,20 @@
 import { constants } from "node:fs";
 import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { Pool } from "pg";
 
+import {
+  BASEBUDDY_APP_STATE_BACKEND_ENV,
+  BASEBUDDY_APP_STATE_DATABASE_URL_ENV,
+} from "./app-state-backend";
+import { getBaseBuddyPostgresSslConfig } from "./database-ssl";
 import { getBaseBuddyConfigPath } from "./paths";
+import {
+  BASEBUDDY_CONTENT_DATABASE_URL_ENV,
+  readBaseBuddyRuntimeEnv,
+  redactDatabaseUrl,
+} from "./env";
+import { createPostgresBaseBuddyConfigStore } from "./postgres-app-state-store";
 import {
   baseBuddyConfigSchema,
   createDefaultBaseBuddyConfig,
@@ -25,6 +37,7 @@ type BaseBuddyConfigStatus = {
 };
 
 let pendingConfigWrite: Promise<void> = Promise.resolve();
+const postgresPoolsByDatabaseUrl = new Map<string, Pool>();
 
 const createConfigReadError = (message: string, cause?: unknown) =>
   Object.assign(new Error(message), { cause });
@@ -87,7 +100,48 @@ const readBaseBuddyConfigFile = async (): Promise<string | null> => {
   }
 };
 
+export const getPostgresAppStateQueryClient = () => {
+  const runtimeEnv = readBaseBuddyRuntimeEnv();
+  const backend = runtimeEnv.appStateBackend;
+  const databaseUrl = runtimeEnv.appStateDatabaseUrl;
+
+  if (!databaseUrl) {
+    const key =
+      backend === "supabase-same-project"
+        ? BASEBUDDY_CONTENT_DATABASE_URL_ENV
+        : BASEBUDDY_APP_STATE_DATABASE_URL_ENV;
+
+    throw new Error(`${key} is required when ${BASEBUDDY_APP_STATE_BACKEND_ENV} is ${backend}.`);
+  }
+
+  const existingPool = postgresPoolsByDatabaseUrl.get(databaseUrl);
+  const pool = existingPool ?? new Pool({
+    allowExitOnIdle: true,
+    connectionString: databaseUrl,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 1_000,
+    max: 2,
+    query_timeout: 5_000,
+    ssl: getBaseBuddyPostgresSslConfig(databaseUrl),
+    statement_timeout: 5_000,
+  });
+
+  if (!existingPool) {
+    postgresPoolsByDatabaseUrl.set(databaseUrl, pool);
+  }
+
+  return pool;
+};
+
+const getPostgresAppStateConfigStore = () => {
+  return createPostgresBaseBuddyConfigStore(getPostgresAppStateQueryClient());
+};
+
 export const loadOptionalBaseBuddyConfig = async (): Promise<BaseBuddyConfig | null> => {
+  if (readBaseBuddyRuntimeEnv().appStateBackend !== "basebuddy-data") {
+    return getPostgresAppStateConfigStore().loadOptional();
+  }
+
   const rawConfig = await readBaseBuddyConfigFile();
 
   if (rawConfig === null) {
@@ -128,7 +182,7 @@ const writeValidatedBaseBuddyConfig = async (config: BaseBuddyConfig) => {
   return validatedConfig;
 };
 
-export const writeBaseBuddyConfig = async (
+const writeLocalBaseBuddyConfig = async (
   updater: (config: BaseBuddyConfig) => BaseBuddyConfig | Promise<BaseBuddyConfig>,
 ): Promise<BaseBuddyConfig> => {
   const operation = pendingConfigWrite
@@ -147,9 +201,23 @@ export const writeBaseBuddyConfig = async (
   return operation;
 };
 
+export const writeBaseBuddyConfig = async (
+  updater: (config: BaseBuddyConfig) => BaseBuddyConfig | Promise<BaseBuddyConfig>,
+): Promise<BaseBuddyConfig> => {
+  if (readBaseBuddyRuntimeEnv().appStateBackend !== "basebuddy-data") {
+    return getPostgresAppStateConfigStore().write(updater);
+  }
+
+  return writeLocalBaseBuddyConfig(updater);
+};
+
 export const ensureBaseBuddyConfig = async (
   seed: CreateDefaultBaseBuddyConfigInput,
 ): Promise<BaseBuddyConfig> => {
+  if (readBaseBuddyRuntimeEnv().appStateBackend !== "basebuddy-data") {
+    return getPostgresAppStateConfigStore().ensure(seed);
+  }
+
   const operation = pendingConfigWrite
     .catch(() => undefined)
     .then(async () => {
@@ -181,6 +249,62 @@ const canAccessConfig = async (mode: number) => {
 
 export const getRedactedBaseBuddyConfigStatus =
   async (): Promise<BaseBuddyConfigStatus> => {
+    const backend = readBaseBuddyRuntimeEnv().appStateBackend;
+
+    if (backend !== "basebuddy-data") {
+      const runtimeEnv = readBaseBuddyRuntimeEnv();
+      const databaseUrl = runtimeEnv.appStateDatabaseUrl;
+      const statusPath =
+        backend === "supabase-same-project"
+          ? "supabase same project: basebuddy.app_state"
+          : "supabase separate project: basebuddy.app_state";
+
+      if (!databaseUrl) {
+        return {
+          config: {
+            error:
+              backend === "supabase-same-project"
+                ? `${BASEBUDDY_CONTENT_DATABASE_URL_ENV} is required for Supabase same-project app data.`
+                : `${BASEBUDDY_APP_STATE_DATABASE_URL_ENV} is required for Supabase separate-project app data.`,
+            exists: false,
+            path: statusPath,
+            readable: false,
+            valid: false,
+            writable: false,
+          },
+          redactedConfig: null,
+        };
+      }
+
+      try {
+        const config = await getPostgresAppStateConfigStore().loadOptional();
+
+        return {
+          config: {
+            error: null,
+            exists: Boolean(config),
+            path: `${statusPath} (${redactDatabaseUrl(databaseUrl)})`,
+            readable: true,
+            valid: Boolean(config),
+            writable: true,
+          },
+          redactedConfig: config ? redactBaseBuddyConfig(config) : null,
+        };
+      } catch (error) {
+        return {
+          config: {
+            error: error instanceof Error ? error.message : "BaseBuddy app data is invalid.",
+            exists: true,
+            path: `${statusPath} (${redactDatabaseUrl(databaseUrl)})`,
+            readable: false,
+            valid: false,
+            writable: false,
+          },
+          redactedConfig: null,
+        };
+      }
+    }
+
     const configPath = getBaseBuddyConfigPath();
     const readable = await canAccessConfig(constants.R_OK);
     const writable = await canAccessConfig(constants.W_OK);

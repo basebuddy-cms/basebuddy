@@ -1,12 +1,16 @@
 # CLI
 
-Run BaseBuddy CLI commands from the app root. The CLI reads and writes:
+Run BaseBuddy CLI commands from the app root. The CLI reads and writes the selected BaseBuddy app-data backend.
+
+By default that is:
 
 ```text
 process.cwd()/basebuddy-data/basebuddy.config.json
 ```
 
-Use CLI commands instead of hand-editing the config file. Env secrets still belong in `.env` or the production host.
+If `BASEBUDDY_APP_STATE_BACKEND` is `supabase-same-project` or `supabase-split-project`, the same CLI commands read and write `basebuddy.app_state` in Postgres/Supabase instead.
+
+Use CLI commands instead of hand-editing files or database rows. Env secrets still belong in `.env` or the production host.
 
 ## Setup
 
@@ -19,6 +23,18 @@ pnpm basebuddy setup
 pnpm basebuddy setup --owner-email owner@example.com --owner-name "Owner" --owner-password "strong-password"
 pnpm setup:check
 ```
+
+App-data backend env:
+
+```sh
+# Default: leave blank for basebuddy-data/
+BASEBUDDY_APP_STATE_BACKEND=
+
+# Use only with supabase-split-project.
+BASEBUDDY_APP_STATE_DATABASE_URL=
+```
+
+`doctor` also reports broad database roles such as `postgres`. Use a restricted role for production so BaseBuddy can only read and edit the tables and columns you grant.
 
 ## Users
 

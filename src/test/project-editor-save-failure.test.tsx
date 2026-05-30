@@ -69,17 +69,27 @@ vi.mock("next/dynamic", async () => {
 
   return {
     default: () => (props: {
+      onConfirmPostAction?: (() => Promise<void>) | null;
+      pendingPostAction?: { confirmLabel: string } | null;
       selectedPost?: { id: string } | null;
       updatePost?: ((postId: string, updates: Record<string, unknown>) => void) | null;
     }) => {
-      if (!props.selectedPost || typeof props.updatePost !== "function") {
+      const { onConfirmPostAction, pendingPostAction, selectedPost, updatePost } = props;
+
+      React.useEffect(() => {
+        if (pendingPostAction && typeof onConfirmPostAction === "function") {
+          void onConfirmPostAction();
+        }
+      }, [onConfirmPostAction, pendingPostAction]);
+
+      if (!selectedPost || typeof updatePost !== "function") {
         return null;
       }
 
       return React.createElement(
         "button",
         {
-          onClick: () => props.updatePost?.(props.selectedPost!.id, { redirects: ["old-post", "older-post"] }),
+          onClick: () => updatePost(selectedPost.id, { redirects: ["old-post", "older-post"] }),
           type: "button",
         },
         "Set Redirects",

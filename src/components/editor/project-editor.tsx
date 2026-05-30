@@ -507,6 +507,12 @@ export function ProjectEditor({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [pendingPostsDelete, setPendingPostsDelete] = useState<PendingPostsDelete | null>(null);
   const [pendingTaxonomyDelete, setPendingTaxonomyDelete] = useState<PendingTaxonomyDelete | null>(null);
+  const [pendingPostAction, setPendingPostAction] = useState<{
+    confirmLabel: string;
+    description: string;
+    title: string;
+    type: "archive" | "publish" | "save" | "unpublish";
+  } | null>(null);
   const [isDeletingPosts, setIsDeletingPosts] = useState(false);
   const [isDeletingCollectionEntry, setIsDeletingCollectionEntry] = useState(false);
   const [settingsNameDraft, setSettingsNameDraft] = useState(projectName);
@@ -5820,28 +5826,28 @@ export function ProjectEditor({
     });
   };
 
-  const handlePublish = async () => {
+  const executePublish = async () => {
     await runSelectedPostStatusTransition({
       action: "publish_post",
       status: "published",
     });
   };
 
-  const handleArchivePost = async () => {
+  const executeArchivePost = async () => {
     await runSelectedPostStatusTransition({
       action: "archive_post",
       status: "archived",
     });
   };
 
-  const handleRestorePostToDraft = async () => {
+  const executeRestorePostToDraft = async () => {
     await runSelectedPostStatusTransition({
       action: "unpublish_post",
       status: "draft",
     });
   };
 
-  const handleSavePost = async () => {
+  const executeSavePost = async () => {
     await runProjectEditorPostSaveAction({
       canEditCurrentPost,
       flushPostSave,
@@ -5855,6 +5861,58 @@ export function ProjectEditor({
       toastSuccess: toast.success,
     });
   };
+
+  const handleConfirmPostAction = async () => {
+    const action = pendingPostAction?.type;
+
+    if (!action) {
+      return;
+    }
+
+    if (action === "save") {
+      await executeSavePost();
+    } else if (action === "publish") {
+      await executePublish();
+    } else if (action === "unpublish") {
+      await executeRestorePostToDraft();
+    } else {
+      await executeArchivePost();
+    }
+
+    setPendingPostAction(null);
+  };
+
+  const handleSavePost = () =>
+    setPendingPostAction({
+      confirmLabel: "Save post",
+      description: "BaseBuddy will update the changed fields in this post.",
+      title: "Save this post?",
+      type: "save",
+    });
+
+  const handlePublish = () =>
+    setPendingPostAction({
+      confirmLabel: "Publish post",
+      description: "BaseBuddy will apply the publish fields from this mapping.",
+      title: "Publish this post?",
+      type: "publish",
+    });
+
+  const handleArchivePost = () =>
+    setPendingPostAction({
+      confirmLabel: "Archive post",
+      description: "BaseBuddy will move this post to the archived state.",
+      title: "Archive this post?",
+      type: "archive",
+    });
+
+  const handleRestorePostToDraft = () =>
+    setPendingPostAction({
+      confirmLabel: "Move to draft",
+      description: "BaseBuddy will move this post back to draft.",
+      title: "Move this post to draft?",
+      type: "unpublish",
+    });
 
   useLayoutEffect(() => {
     savePostShortcutRef.current = handleSavePost;
@@ -6836,6 +6894,7 @@ export function ProjectEditor({
     Boolean(pendingRevisionRestore) ||
     Boolean(pendingPostsDelete) ||
     Boolean(pendingTaxonomyDelete) ||
+    Boolean(pendingPostAction) ||
     showMappingConfirmDialog ||
     Boolean(pendingPostTakeover) ||
     Boolean(lostPostAccessState) ||
@@ -6958,6 +7017,7 @@ export function ProjectEditor({
             setShowMappingConfirmDialog(false);
             void handlePostsMappingFinishRef.current?.();
           }}
+          onConfirmPostAction={handleConfirmPostAction}
           handleProceedWithoutSaving={handleProceedWithoutSaving}
           handleProjectSlugUnlockProceed={handleProjectSlugUnlockProceed}
           handleRestoreLostPostDraft={handleRestoreLostPostDraft}
@@ -6971,6 +7031,7 @@ export function ProjectEditor({
           isDeletingProject={isDeletingProject}
           isPostsCollection={isPostsCollection}
           isSaving={isSaving}
+          isPublishing={isPublishing}
           isSavingProjectSettings={isSavingProjectSettings}
           loadPostRevisions={loadPostRevisions}
           loadingPostRevisions={loadingPostRevisions}
@@ -6979,6 +7040,7 @@ export function ProjectEditor({
           onPendingPostsDeleteChange={setPendingPostsDelete}
           onPendingRevisionRestoreChange={setPendingRevisionRestore}
           onPendingTaxonomyDeleteChange={setPendingTaxonomyDelete}
+          onPendingPostActionChange={setPendingPostAction}
           onPostsMappingDialogOpenChange={(open) => {
             if (!open) {
               setLoadingSavedMapping(false);
@@ -7000,6 +7062,7 @@ export function ProjectEditor({
           }}
           pendingLostPostDraftRestore={pendingLostPostDraftRestore}
           pendingPostTakeover={pendingPostTakeover}
+          pendingPostAction={pendingPostAction}
           pendingPostsDelete={pendingPostsDelete}
           pendingRevisionRestore={pendingRevisionRestore}
           pendingStoredDraftRestore={pendingStoredDraftRestore}

@@ -14,7 +14,7 @@ import {
   readBaseBuddyRuntimeEnv,
   redactEnvCredentialValue,
 } from "./env";
-import { getBaseBuddyConfigPath } from "./paths";
+import { getBaseBuddyPostgresSslConfig } from "./database-ssl";
 import { loadOptionalBaseBuddyConfig, getRedactedBaseBuddyConfigStatus } from "./store";
 
 export type BaseBuddyConfigSetupCheckStatus = "ready" | "missing" | "invalid";
@@ -37,7 +37,7 @@ export type BaseBuddyConfigSetupSection = {
 export type BaseBuddyConfigSetupStatus = {
   configPath: string;
   sections: BaseBuddyConfigSetupSection[];
-  topology: "config-file" | "invalid";
+  topology: "config-file" | "supabase-same-project" | "supabase-split-project" | "invalid";
 };
 
 type BaseBuddyConfigSetupDependencies = {
@@ -86,22 +86,24 @@ const createCheck = ({
   value,
 });
 
-const getContentDatabaseSslConfig = (connectionString: string) => {
-  try {
-    const url = new URL(connectionString);
+const broadDatabaseRoleNames = new Set([
+  "postgres",
+  "service_role",
+  "supabase_admin",
+  "admin",
+  "root",
+]);
 
-    if (url.searchParams.get("sslmode")?.toLowerCase() === "disable") {
-      return false;
-    }
-  } catch {
-    return {
-      rejectUnauthorized: false,
-    };
+const getDatabaseRoleName = (connectionString: string | null) => {
+  if (!connectionString) {
+    return null;
   }
 
-  return {
-    rejectUnauthorized: false,
-  };
+  try {
+    return decodeURIComponent(new URL(connectionString).username).trim() || null;
+  } catch {
+    return null;
+  }
 };
 
 export const queryBaseBuddyContentDatabase = async (connectionString: string) => {
@@ -112,7 +114,7 @@ export const queryBaseBuddyContentDatabase = async (connectionString: string) =>
     idleTimeoutMillis: 1_000,
     max: 1,
     query_timeout: 5_000,
-    ssl: getContentDatabaseSslConfig(connectionString),
+    ssl: getBaseBuddyPostgresSslConfig(connectionString),
     statement_timeout: 5_000,
   });
 
@@ -127,15 +129,17 @@ export const getBaseBuddyConfigSetupStatus = async ({
   checkContentDatabase = false,
   queryDatabase = queryBaseBuddyContentDatabase,
 }: BaseBuddyConfigSetupDependencies = {}): Promise<BaseBuddyConfigSetupStatus> => {
-  const configPath = getBaseBuddyConfigPath();
   const redactedStatus = await getRedactedBaseBuddyConfigStatus();
-  const configDirectory = dirname(configPath);
-  const configFileWritable = redactedStatus.config.exists
-    ? redactedStatus.config.writable
-    : (await canAccess(configDirectory, constants.W_OK)) ||
-      (await canAccess(dirname(configDirectory), constants.W_OK));
-  const config = redactedStatus.config.valid ? await loadOptionalBaseBuddyConfig() : null;
   const runtimeEnv = readBaseBuddyRuntimeEnv();
+  const configPath = redactedStatus.config.path;
+  const isFileAppStateBackend = runtimeEnv.appStateBackend === "basebuddy-data";
+  const configFileWritable = isFileAppStateBackend
+    ? redactedStatus.config.exists
+      ? redactedStatus.config.writable
+      : (await canAccess(dirname(configPath), constants.W_OK)) ||
+        (await canAccess(dirname(dirname(configPath)), constants.W_OK))
+    : redactedStatus.config.writable;
+  const config = redactedStatus.config.valid ? await loadOptionalBaseBuddyConfig() : null;
   const databaseUrl = runtimeEnv.contentDatabaseUrl;
   const redactedDatabaseUrl = redactEnvCredentialValue({
     key: BASEBUDDY_CONTENT_DATABASE_URL_ENV,
@@ -144,29 +148,41 @@ export const getBaseBuddyConfigSetupStatus = async ({
   const configChecks: BaseBuddyConfigSetupCheck[] = [
     createCheck({
       key: "basebuddy.config.exists",
-      label: "Config file exists",
+      label: isFileAppStateBackend ? "Config file exists" : "App data exists",
       status: redactedStatus.config.exists ? "ready" : "missing",
       value: configPath,
     }),
     createCheck({
       key: "basebuddy.config.readable",
-      label: "Config file readable",
+      label: isFileAppStateBackend ? "Config file readable" : "App data readable",
       status: redactedStatus.config.exists
         ? redactedStatus.config.readable
           ? "ready"
           : "invalid"
         : "missing",
-      value: redactedStatus.config.exists ? configPath : "Create basebuddy-data/basebuddy.config.json.",
+      value: redactedStatus.config.exists
+        ? configPath
+        : isFileAppStateBackend
+          ? "Create basebuddy-data/basebuddy.config.json."
+          : redactedStatus.config.error ?? "Create BaseBuddy app data.",
     }),
     createCheck({
       key: "basebuddy.config.writable",
-      label: "Config path writable",
-      status: configFileWritable ? "ready" : "invalid",
-      value: configFileWritable ? configPath : "BaseBuddy cannot write this config path.",
+      label: isFileAppStateBackend ? "Config path writable" : "App data writable",
+      status: configFileWritable
+        ? "ready"
+        : redactedStatus.config.exists
+          ? "invalid"
+          : "missing",
+      value: configFileWritable
+        ? configPath
+        : isFileAppStateBackend
+          ? "BaseBuddy cannot write this config path."
+          : redactedStatus.config.error ?? "BaseBuddy cannot write app data.",
     }),
     createCheck({
       key: "basebuddy.config.valid",
-      label: "Config file validates",
+      label: isFileAppStateBackend ? "Config file validates" : "App data validates",
       status: redactedStatus.config.exists
         ? redactedStatus.config.valid
           ? "ready"
@@ -174,7 +190,9 @@ export const getBaseBuddyConfigSetupStatus = async ({
         : "missing",
       value: redactedStatus.config.exists
         ? redactedStatus.config.error ?? "valid"
-        : "Create basebuddy-data/basebuddy.config.json.",
+        : isFileAppStateBackend
+          ? "Create basebuddy-data/basebuddy.config.json."
+          : redactedStatus.config.error ?? "Create BaseBuddy app data.",
     }),
   ];
   const ownerChecks: BaseBuddyConfigSetupCheck[] = [
@@ -211,6 +229,24 @@ export const getBaseBuddyConfigSetupStatus = async ({
     }),
   ];
   const databaseConnectionChecks: BaseBuddyConfigSetupCheck[] = [];
+  const databaseRoleName = getDatabaseRoleName(databaseUrl);
+  const databaseRoleChecks: BaseBuddyConfigSetupCheck[] = [
+    createCheck({
+      key: "BASEBUDDY_CONTENT_DATABASE_URL.role",
+      label: "Restricted database role",
+      required: false,
+      status: databaseRoleName
+        ? broadDatabaseRoleNames.has(databaseRoleName.toLowerCase())
+          ? "invalid"
+          : "ready"
+        : "missing",
+      value: databaseRoleName
+        ? broadDatabaseRoleNames.has(databaseRoleName.toLowerCase())
+          ? "Use a restricted database role for production."
+          : "Using a named database role."
+        : `Set ${BASEBUDDY_CONTENT_DATABASE_URL_ENV} first.`,
+    }),
+  ];
 
   if (!databaseUrl) {
     databaseConnectionChecks.push(
@@ -343,9 +379,11 @@ export const getBaseBuddyConfigSetupStatus = async ({
   const sections: BaseBuddyConfigSetupSection[] = [
     {
       checks: configChecks,
-      description: "The BaseBuddy config file at process.cwd()/basebuddy-data/basebuddy.config.json.",
+      description: isFileAppStateBackend
+        ? "The BaseBuddy config file at process.cwd()/basebuddy-data/basebuddy.config.json."
+        : "BaseBuddy app data stored in the selected Supabase/Postgres project.",
       status: getSectionStatus(configChecks),
-      title: "Config file",
+      title: isFileAppStateBackend ? "Config file" : "BaseBuddy app data",
     },
     {
       checks: ownerChecks,
@@ -366,6 +404,12 @@ export const getBaseBuddyConfigSetupStatus = async ({
       title: "Database connection",
     },
     {
+      checks: databaseRoleChecks,
+      description: "Use a role with only the table and column permissions editors need.",
+      status: getSectionStatus(databaseRoleChecks),
+      title: "Database role",
+    },
+    {
       checks: supabaseStorageChecks,
       description: "Supabase credentials for images and files.",
       status: getSectionStatus(supabaseStorageChecks),
@@ -382,7 +426,14 @@ export const getBaseBuddyConfigSetupStatus = async ({
   return {
     configPath,
     sections,
-    topology: redactedStatus.config.valid || !redactedStatus.config.exists ? "config-file" : "invalid",
+    topology:
+      redactedStatus.config.exists && !redactedStatus.config.valid
+        ? "invalid"
+        : isFileAppStateBackend
+          ? "config-file"
+          : runtimeEnv.appStateBackend === "basebuddy-data"
+            ? "config-file"
+            : runtimeEnv.appStateBackend,
   };
 };
 

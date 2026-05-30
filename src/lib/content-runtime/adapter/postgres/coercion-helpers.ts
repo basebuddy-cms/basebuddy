@@ -263,12 +263,19 @@ export const coerceContentAdapterValue = ({
       return coerceTemporalValue({ value, valueKind: "datetime" });
     case "json_object":
     case "json_object_inline":
-    case "json_object_list":
-      return typeof value === "object" && value !== null
+      return typeof value === "object" && value !== null && !Array.isArray(value)
         ? { ok: true, value }
         : {
             code: "invalid_json_object",
-            message: "Enter a valid object value.",
+            message: "Enter a valid JSON object.",
+            ok: false,
+          };
+    case "json_object_list":
+      return Array.isArray(value) && value.every((item) => typeof item === "object" && item !== null && !Array.isArray(item))
+        ? { ok: true, value }
+        : {
+            code: "invalid_json_object",
+            message: "Enter a valid JSON object list.",
             ok: false,
           };
     case "array_scalar":
