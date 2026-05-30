@@ -1,4 +1,8 @@
-import type { ContentAuthor, ContentPagination } from "@/lib/content-runtime/shared";
+import type {
+  ContentAuthor,
+  ContentDatabaseReadAccessNotice,
+  ContentPagination,
+} from "@/lib/content-runtime/shared";
 
 export type ProjectAuthorMember = {
   avatarUrl: string | null;
@@ -14,6 +18,7 @@ export type ProjectAuthorAssignment = {
 };
 
 export type ProjectAuthorsPayload = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   assignments?: ProjectAuthorAssignment[];
   authorMembers?: ProjectAuthorMember[];
   authors: ContentAuthor[];

@@ -251,6 +251,7 @@ import {
   createDefaultContentPostSidebarConfig,
   type ContentCollection,
   type ContentCollectionCounts,
+  type ContentDatabaseReadAccessNotice,
   type ContentPagination,
   type ContentPostEditorPayload,
   type ContentPostSidebarConfig,
@@ -347,6 +348,18 @@ type ProjectEditorProps = {
   projectWebsiteUrl: string | null;
 };
 
+type CollectionAccessNoticeState = Record<
+  "Authors" | "Categories" | "Posts" | "Tags",
+  ContentDatabaseReadAccessNotice | null
+>;
+
+const defaultCollectionAccessNotices: CollectionAccessNoticeState = {
+  Authors: null,
+  Categories: null,
+  Posts: null,
+  Tags: null,
+};
+
 export function ProjectEditor({
   accountAvatarUrl,
   accountEmail,
@@ -399,6 +412,8 @@ export function ProjectEditor({
   const [categoryOptions, setCategoryOptions] = useState<ContentCategory[]>([]);
   const [tags, setTags] = useState<ContentTag[]>([]);
   const [media, setMedia] = useState<ContentMedia[]>([]);
+  const [collectionAccessNotices, setCollectionAccessNotices] =
+    useState<CollectionAccessNoticeState>(defaultCollectionAccessNotices);
   const [collectionCounts, setCollectionCounts] = useState<ContentCollectionCounts>(
     initialWorkspacePayload?.counts ?? defaultCollectionCounts,
   );
@@ -1533,6 +1548,10 @@ export function ProjectEditor({
     });
 
     setPosts(mergedPosts);
+    setCollectionAccessNotices((currentNotices) => ({
+      ...currentNotices,
+      Posts: payload.accessNotice ?? null,
+    }));
     setAuthors(payload.authors ?? []);
     setPostsListIndexState(payload.postsListIndexState ?? "ready");
     if (hasFullContentEditorOptions(payload)) {
@@ -1646,6 +1665,10 @@ export function ProjectEditor({
 
   const applyCategoriesPagePayload = useCallback((payload: ContentCategoriesPage & { error?: string }) => {
     setCategories(payload.items ?? []);
+    setCollectionAccessNotices((currentNotices) => ({
+      ...currentNotices,
+      Categories: payload.accessNotice ?? null,
+    }));
     if (payload.allCategories) {
       setCategoryOptions(payload.allCategories);
     }
@@ -1662,6 +1685,10 @@ export function ProjectEditor({
 
   const applyTagsPagePayload = useCallback((payload: CollectionPagePayload<ContentTag>) => {
     setTags(payload.items ?? []);
+    setCollectionAccessNotices((currentNotices) => ({
+      ...currentNotices,
+      Tags: payload.accessNotice ?? null,
+    }));
     setCollectionPagination(payload.pagination ?? defaultPagination);
     setCollectionPages((currentPages) =>
       currentPages.Tags === (payload.pagination?.page ?? 1)
@@ -1675,6 +1702,10 @@ export function ProjectEditor({
 
   const applyAuthorsPagePayload = useCallback((payload: CollectionPagePayload<ContentAuthor>) => {
     setAuthors(payload.items ?? []);
+    setCollectionAccessNotices((currentNotices) => ({
+      ...currentNotices,
+      Authors: payload.accessNotice ?? null,
+    }));
     setCollectionPagination(payload.pagination ?? defaultPagination);
     setCollectionPages((currentPages) =>
       currentPages.Authors === (payload.pagination?.page ?? 1)
@@ -6262,6 +6293,7 @@ export function ProjectEditor({
     return (
       <ProjectEditorScrollPane>
         <ProjectEditorPostsCollectionPage
+          accessNotice={collectionAccessNotices.Posts}
           authorsById={authorsById}
           collectionPagination={collectionPagination}
           creatingPost={creatingPost}
@@ -6563,6 +6595,7 @@ export function ProjectEditor({
   const categoriesPage = (
     <ProjectEditorScrollPane>
       <ProjectEditorTaxonomyCollectionPage
+        accessNotice={collectionAccessNotices.Categories}
         canManageTaxonomy={canManageTaxonomy}
         collection="Categories"
         emptyMessage="Create your first category to organize posts in this project."
@@ -6596,6 +6629,7 @@ export function ProjectEditor({
   const tagsPage = (
     <ProjectEditorScrollPane>
       <ProjectEditorTaxonomyCollectionPage
+        accessNotice={collectionAccessNotices.Tags}
         canManageTaxonomy={canManageTaxonomy}
         collection="Tags"
         emptyMessage="Create your first tag to label content with finer detail."

@@ -10,6 +10,7 @@ import {
   createContentRuntimeAdapter,
   getRequiredContentRuntimeAdapterMethod,
 } from "./adapter/factory";
+import { getContentDatabaseReadAccessNotice } from "./database-access-notice";
 import { resolvePagination } from "./mapped-content-runtime-support";
 import { isDisposableContentPostDraft } from "@/lib/editor/post-editor-rules";
 import {
@@ -472,8 +473,15 @@ export const getMappedContentPostsPage = async ({
         status,
         totalItems,
         useWindowPagination,
-      }).then((pageResult) => ({
+      }).then(async (pageResult) => ({
         ...pageResult,
+        accessNotice: await getContentDatabaseReadAccessNotice({
+          client,
+          collectionLabel: "posts",
+          entity: readyMapping.mappingConfig.entities.posts,
+          hasActiveFilters: Boolean(search.trim()) || status !== "all",
+          visibleItemCount: pageResult.pagination.totalItems,
+        }),
         postsListIndexState,
       }));
 

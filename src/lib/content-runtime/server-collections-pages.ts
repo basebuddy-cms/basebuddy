@@ -4,6 +4,7 @@ import {
   createContentRuntimeAdapter,
   getRequiredContentRuntimeAdapterMethod,
 } from "./adapter/factory";
+import { getContentDatabaseReadAccessNotice } from "./database-access-notice";
 import {
   type CollectionDependencies,
   type ContentAuthor,
@@ -62,8 +63,7 @@ export const getContentCategoriesPage = async ({
       adapter,
       "loadCategoriesPage",
     );
-
-    return loadCategoriesPage({
+    const pageResult = await loadCategoriesPage({
       client,
       includeAllCategories,
       page,
@@ -71,6 +71,17 @@ export const getContentCategoriesPage = async ({
       projectId,
       search,
     });
+
+    return {
+      ...pageResult,
+      accessNotice: await getContentDatabaseReadAccessNotice({
+        client,
+        collectionLabel: "categories",
+        entity: readyMapping.mappingConfig.entities.categories,
+        hasActiveFilters: Boolean(search?.trim()),
+        visibleItemCount: pageResult.pagination.totalItems,
+      }),
+    };
   });
 };
 
@@ -105,13 +116,23 @@ export const getContentTagsPage = async ({
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
     const loadTagsPage = getRequiredContentRuntimeAdapterMethod(adapter, "loadTagsPage");
-
-    return loadTagsPage({
+    const pageResult = await loadTagsPage({
       client,
       page,
       pageSize,
       search,
     });
+
+    return {
+      ...pageResult,
+      accessNotice: await getContentDatabaseReadAccessNotice({
+        client,
+        collectionLabel: "tags",
+        entity: readyMapping.mappingConfig.entities.tags,
+        hasActiveFilters: Boolean(search?.trim()),
+        visibleItemCount: pageResult.pagination.totalItems,
+      }),
+    };
   });
 };
 
@@ -149,14 +170,24 @@ export const getContentAuthorsPage = async ({
   return dependencies.withContentDatabaseClient(context.connectionString as string, async (client) => {
     const adapter = createContentCollectionsAdapter(readyMapping);
     const loadAuthorsPage = getRequiredContentRuntimeAdapterMethod(adapter, "loadAuthorsPage");
-
-    return loadAuthorsPage({
+    const pageResult = await loadAuthorsPage({
       authorAssignmentsByAuthorId,
       client,
       page,
       pageSize,
       search,
     });
+
+    return {
+      ...pageResult,
+      accessNotice: await getContentDatabaseReadAccessNotice({
+        client,
+        collectionLabel: "authors",
+        entity: readyMapping.mappingConfig.entities.authors,
+        hasActiveFilters: Boolean(search?.trim()),
+        visibleItemCount: pageResult.pagination.totalItems,
+      }),
+    };
   });
 };
 

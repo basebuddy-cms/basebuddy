@@ -5,7 +5,11 @@ import { Pencil, Trash2 } from "lucide-react";
 
 import type { ProjectAuthorMember } from "@/lib/control-plane/authors";
 import { getUserDisplayName } from "@/lib/control-plane/utils";
-import type { ContentAuthor, ContentPagination } from "@/lib/content-runtime/shared";
+import type {
+  ContentAuthor,
+  ContentDatabaseReadAccessNotice,
+  ContentPagination,
+} from "@/lib/content-runtime/shared";
 import type { AuthorAssignmentDraft } from "@/components/editor/project-authors-manager/support";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +41,7 @@ import {
 } from "@/components/ui/table";
 
 type ProjectAuthorsManagerTableProps = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   authorAssignmentDrafts: Record<string, AuthorAssignmentDraft>;
   authorMembers: ProjectAuthorMember[];
   authors: ContentAuthor[];
@@ -56,6 +61,7 @@ type ProjectAuthorsManagerTableProps = {
 };
 
 export function ProjectAuthorsManagerTable({
+  accessNotice,
   authorAssignmentDrafts,
   authorMembers,
   authors,
@@ -196,7 +202,7 @@ export function ProjectAuthorsManagerTable({
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={6} className="px-0 py-10 text-sm text-muted-foreground">
-                Create your first author to connect team members to author profiles.
+                {accessNotice?.message ?? "Create your first author to connect team members to author profiles."}
               </TableCell>
             </TableRow>
           )}

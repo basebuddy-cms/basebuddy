@@ -22,6 +22,7 @@ import {
   createDefaultContentMappingConfig,
   normalizeContentProjectMapping,
 } from "@/lib/content-runtime/mapping";
+import type { ContentProjectContext } from "@/lib/content-runtime/server-project-context";
 
 const fixedNow = "2026-05-28T00:00:00.000Z";
 const authSecret = "local-auth-secret-value-with-32-plus-chars";
@@ -207,5 +208,45 @@ describe("server project mapping access", () => {
         revisionVersion: null,
       },
     });
+  });
+
+  it("keeps mapping settings readable when optional Supabase bucket lookup is denied", async () => {
+    const { getContentProjectSupabaseStorageBuckets } = await import(
+      "@/lib/content-runtime/server-project-mapping"
+    );
+    const context = {
+      apiUrl: null,
+      connectionString: "postgres://user:password@localhost:5432/postgres",
+      memberAccess: {
+        accessibleAuthorIds: null,
+        role: "owner",
+      },
+      projectId: "project-1",
+      projectSlug: "demo-project",
+      publishableKey: null,
+      schemaOptions: {},
+      user: {
+        email: "owner@example.com",
+        id: "user-1",
+        name: null,
+        role: "owner",
+      },
+    } satisfies ContentProjectContext;
+
+    await expect(
+      getContentProjectSupabaseStorageBuckets({
+        dependencies: {
+          ensureProjectManagementPermission: vi.fn(),
+          ensureProjectPermission: vi.fn(),
+          getFilesStorageCredentialStatus: vi.fn(),
+          getMediaStorageCredentialStatus: vi.fn(),
+          getProjectContext: vi.fn(async () => context),
+          withContentDatabaseClient: vi.fn(async () => {
+            throw new Error("permission denied for schema storage");
+          }),
+        },
+        projectId: "project-1",
+      }),
+    ).resolves.toEqual([]);
   });
 });

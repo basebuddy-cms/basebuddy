@@ -5,6 +5,7 @@ import { ChevronDown, Pencil, Plus, Trash2, type LucideIcon } from "lucide-react
 
 import type {
   ContentCategory,
+  ContentDatabaseReadAccessNotice,
   ContentTag,
 } from "@/lib/content-runtime/shared";
 
@@ -35,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 type TaxonomyEntry = ContentCategory | ContentTag;
 
 type ProjectEditorTaxonomyCollectionPageProps = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   canManageTaxonomy: boolean;
   collection: TaxonomyCollectionLabel;
   emptyMessage: string;
@@ -75,6 +77,7 @@ type ProjectEditorTaxonomySidePanelProps = {
 };
 
 export function ProjectEditorTaxonomyCollectionPage({
+  accessNotice,
   canManageTaxonomy,
   collection,
   emptyMessage,
@@ -179,7 +182,7 @@ export function ProjectEditorTaxonomyCollectionPage({
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={5} className="px-0 py-10 text-sm text-muted-foreground">
-                {emptyMessage}
+                {accessNotice?.message ?? emptyMessage}
               </TableCell>
             </TableRow>
           )}

@@ -16,6 +16,7 @@ import { getUserDisplayName } from "@/lib/control-plane/utils";
 import {
   slugifyContentValue,
   type ContentAuthor,
+  type ContentDatabaseReadAccessNotice,
   type ContentPagination,
 } from "@/lib/content-runtime/shared";
 import { getProductionErrorMessage } from "@/lib/errors/user-facing";
@@ -75,6 +76,7 @@ export function ProjectAuthorsManager({
   const [authorMembers, setAuthorMembers] = useState<ProjectAuthorMember[]>([]);
   const [authorAssignments, setAuthorAssignments] = useState<ProjectAuthorAssignment[]>([]);
   const [authorAssignmentDrafts, setAuthorAssignmentDrafts] = useState<Record<string, AuthorAssignmentDraft>>({});
+  const [accessNotice, setAccessNotice] = useState<ContentDatabaseReadAccessNotice | null>(null);
   const [selectedAuthorIds, setSelectedAuthorIds] = useState<string[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingAuthorDelete>(null);
   const [pagination, setPagination] = useState<ContentPagination>(defaultPagination);
@@ -107,6 +109,7 @@ export function ProjectAuthorsManager({
     const nextAuthorMembers = payload.authorMembers ?? authorMembers;
     const nextAssignments = payload.assignments ?? authorAssignments;
     const normalizedPayload: ProjectAuthorsPayload = {
+      accessNotice: payload.accessNotice ?? null,
       assignments: nextAssignments,
       authorMembers: nextAuthorMembers,
       authors: payload.authors,
@@ -114,6 +117,7 @@ export function ProjectAuthorsManager({
     };
 
     setAuthors(payload.authors);
+    setAccessNotice(payload.accessNotice ?? null);
     setAuthorMembers(nextAuthorMembers);
     setAuthorAssignments(nextAssignments);
     setPagination(payload.pagination);
@@ -626,6 +630,7 @@ export function ProjectAuthorsManager({
             />
 
             <ProjectAuthorsManagerTable
+              accessNotice={accessNotice}
               authorAssignmentDrafts={authorAssignmentDrafts}
               authorMembers={authorMembers}
               authors={authors}

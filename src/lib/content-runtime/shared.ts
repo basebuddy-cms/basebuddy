@@ -783,6 +783,7 @@ export type ContentWorkspaceMeta = {
 };
 
 export type ContentCollectionPage<T> = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   items: T[];
   pagination: ContentPagination;
 };
@@ -791,12 +792,14 @@ export type ContentEditorOptionsState = "warm" | "full";
 export type ContentPostsListIndexState = "ready" | "warming";
 
 export type ContentCategoriesPage = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   allCategories?: ContentCategory[];
   items: ContentCategory[];
   pagination: ContentPagination;
 };
 
 export type ContentPostsPage = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   authors: ContentAuthor[];
   categories: ContentCategory[];
   editorOptionsState: ContentEditorOptionsState;
@@ -804,6 +807,13 @@ export type ContentPostsPage = {
   posts: ContentPost[];
   postsListIndexState?: ContentPostsListIndexState;
   tags: ContentTag[];
+};
+
+export type ContentDatabaseReadAccessNotice = {
+  estimatedRows: number | null;
+  kind: "database_read_access_limited";
+  message: string;
+  tableRef: string;
 };
 
 export type ContentPostEditorPayload = {

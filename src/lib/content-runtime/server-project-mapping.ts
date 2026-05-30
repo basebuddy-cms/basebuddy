@@ -342,7 +342,7 @@ export const getContentProjectSupabaseStorageBuckets = async ({
   }
 
   try {
-    return dependencies.withContentDatabaseClient(context.connectionString, async (client) => {
+    return await dependencies.withContentDatabaseClient(context.connectionString, async (client) => {
       const result = await client.query<StorageBucketRow>(
         buildContentStorageBucketsQuery(),
       );

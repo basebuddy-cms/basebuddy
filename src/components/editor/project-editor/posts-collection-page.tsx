@@ -6,6 +6,7 @@ import { FileText, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { NavigationLink } from "@/components/editor/navigation-link";
 import {
   type ContentPagination,
+  type ContentDatabaseReadAccessNotice,
   type ContentPost,
   type ContentPostsListIndexState,
   type ContentPostsSort,
@@ -49,6 +50,7 @@ type PostAuthorListEntry = {
 };
 
 type ProjectEditorPostsCollectionPageProps = {
+  accessNotice?: ContentDatabaseReadAccessNotice | null;
   authorsById: Map<string, PostAuthorListEntry>;
   collectionPagination: ContentPagination;
   creatingPost: boolean;
@@ -79,6 +81,7 @@ type ProjectEditorPostsCollectionPageProps = {
 };
 
 export function ProjectEditorPostsCollectionPage({
+  accessNotice,
   authorsById,
   collectionPagination,
   creatingPost,
@@ -115,6 +118,20 @@ export function ProjectEditorPostsCollectionPage({
   const hasSelection = selectedWritablePostIds.length > 0;
 
   if (!posts.length && collectionPagination.totalItems === 0 && !hasPostsQueryControlsActive) {
+    if (accessNotice) {
+      return (
+        <div className="mx-auto flex min-h-full max-w-6xl items-center px-10 py-12">
+          <div className="w-full py-12 text-center">
+            <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
+            <h2 className="mt-4 text-lg font-semibold text-foreground">No readable posts</h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              {accessNotice.message}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="mx-auto flex min-h-full max-w-6xl items-center px-10 py-12">
         <div className="w-full py-12 text-center">

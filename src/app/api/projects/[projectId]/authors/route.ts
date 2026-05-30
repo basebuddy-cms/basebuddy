@@ -89,6 +89,7 @@ const loadProjectAuthorsPayload = async ({
 
   if (!includeMeta) {
     return {
+      accessNotice: authorsPage.accessNotice ?? null,
       authors: authorsPage.items,
       pagination: authorsPage.pagination,
     } satisfies ProjectAuthorsPayload;
@@ -100,6 +101,7 @@ const loadProjectAuthorsPayload = async ({
   ]);
 
   return {
+    accessNotice: authorsPage.accessNotice ?? null,
     assignments,
     authorMembers,
     authors: authorsPage.items,
